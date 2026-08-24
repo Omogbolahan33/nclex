@@ -1,0 +1,32 @@
+# Dependencies — restored by `npm ci` (Render runs this at build time)
+node_modules/
+
+# Build artifacts — regenerate with `npm run build`
+# public/ is rebuilt by Render's buildCommand (node build-online.mjs)
+public/
+standalone.html
+
+# Runtime state — the JSON store is dev-only; production uses STORE=pg.
+# store-json.js creates data/ on demand and starts blank if absent.
+data/store.json
+data/store.json.tmp
+
+# Local dev TLS material — never commit private keys.
+# Regenerate with: openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+#   -keyout data/tls/dev.key -out data/tls/dev.crt -subj "/CN=localhost"
+data/tls/
+
+# Secrets — real values belong in Render's dashboard, not the repo
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*

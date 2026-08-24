@@ -1,0 +1,41 @@
+# RN Ready — Render Blueprint (deploy in one click from a connected repo).
+# Docs: https://render.com/docs/blueprint-spec · Runbook: DEPLOYMENT.md
+#
+# Stack: one Node web service (the exam server) + external Supabase Postgres
+# (DATABASE_URL). The store normalizes into per-table rows (schema.sql v2);
+# run `npm run db:migrate` once against the database — Render's shell makes
+# this easy, or run locally with the same DATABASE_URL.
+
+services:
+  - type: web
+    name: rn-ready-exam
+    runtime: node
+    region: oregon                     # pick the region nearest your users
+    plan: starter                      # free tier works for pilots (sleeps)
+    buildCommand: npm ci && npm i pg && node build-online.mjs
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STORE
+        value: pg
+      # Supabase → Settings → Database → Connection string → Session pooler URI
+      - key: DATABASE_URL
+        sync: false                    # secret — paste in the Render dashboard
+      - key: PGSSL
+        value: require                 # managed Postgres needs TLS
+      - key: PG_STORE_KEY
+        value: state
+      # Break-glass admin key. generateValue creates one; read it back in the
+      # dashboard and store it in your password manager BEFORE first login.
+      - key: ADMIN_KEY
+        generateValue: true
+      # Staff authoring keys: "key:role:name,key:role:name"
+      # roles: author | reviewer | publisher | editor (see authoring.ACTIONS)
+      - key: AUTH_KEYS
+        sync: false                    # secret — paste in the Render dashboard
+      # Optional niceties
+      - key: PG_POOL_MAX
+        value: "5"

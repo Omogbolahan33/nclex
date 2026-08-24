@@ -1,0 +1,122 @@
+# RN Ready — NCLEX-RN Practice Platform · v3m
+
+Mobile-first NCLEX-RN preparation platform: multi-axis practice, all 7 item formats,
+unfolding clinical-judgment cases, server-side adaptive CAT simulation, spaced
+repetition, honest readiness analytics — with accounts, cross-device sync, persistence,
+and answer keys that never leave the server.
+
+## Run it
+
+```bash
+npm i jsdom            # once per environment (dev dependency for the DOM test)
+npm run build          # build standalone.html + public/ (key-free app)
+npm start              # exam server on :3000
+npm test               # engine/bank smoke (1531) + DOM (64) + admin (35) + store contract (24)
+npm run test:api       # API/security/authoring/PWA/hardening suite (~120, CAT-length dependent) — needs `npm start` running
+npm run calibrate      # item calibration report from the response log (--apply to persist)
+```
+
+## Architecture
+
+```
+server.js        zero-dep exam server: key-free static hosting, scoring API,
+                 server-side CAT, accounts (scrypt + bearer tokens), sync,
+                 rate limiting, gzip, health, persistence hook
+store.js         JSON-file store (atomic, debounced writes) → swap for Postgres
+data/store.json  users · tokens · sims · response log (calibration feed)
+public/          the served client — contains NO bank files at all; PWA shell
+                 (sw.js build-stamped cache, manifest, icon) — sw never touches
+                 /api/item/…/full, /api/admin, auth or sims
+js/bank*.js      308 standalone items (30 PN-scope, fam-tagged) incl. 11 variantGroup sets (27 items), all
+                 7 item formats, full metadata + rationales (server-side only)
+js/case*.js      3 unfolding NCJMM case studies (18 items)
+js/engine.js     scoring · θ ability · blueprint CAT · stopping rules · SRS ·
+                 stats/readiness · sync merge (DOM-free, unit-tested)
+js/render.js     7 NCLEX format renderers (accessible + review marking)
+js/ui.js         hash router + screens (Home/Practice/Study/Simulate/Progress/Settings)
+js/api.js        remote adapter: sanitized bootstrap, server scoring,
+                 post-answer explanations, auth + track/state sync
+authoring.js     v3c review workflow + v3l RBAC: draft → review → approved → published →
+                 retired; full item validation against the taxonomy; versioning
+                 (published items are never overwritten without a snapshot in
+                 history); bulk import lands everything as drafts; bank patches
+                 persist and replay at boot
+admin/           authoring console (mobile-first, /admin) — key-gated UI whose
+                 transition buttons render from the server's transition map
+js/notify.js     v3d study reminders: permission-gated Notification API with
+                 in-app fallback, daily time preference, exam-countdown + streak
+                 messaging; local-only (no server push)
+calibrate.js     v3b psychometrics: p-value, point-biserial discrimination,
+                 empirical difficulty (logit) blended with authored b (n/(n+K));
+                 flags low-discrimination / hard-floor / ceiling / slow items
+standalone.html  the whole app in one self-contained file (local demo/offline mode)
+store.js         storage dispatcher: JSON file (default) or Postgres (STORE=pg)
+store-json.js    zero-dep JSON store — atomic tmp+rename writes, debounced,
+                 RNREADY_STORE path override
+store-pg.js      Postgres adapter v2 (PER-TABLE NORMALIZED): users · tokens ·
+                 responses (ts-watermarked upserts, UNIQUE owner/sid/qid) · sims ·
+                 seen · authoring_records · bank_patches · meta, one transaction per
+                 flush + automatic v1 document migration; identical interface; `npm i pg`
+schema.sql       Postgres DDL v2: normalized tables (users, tokens, responses,
+                 sims, seen, authoring_records, bank_patches, meta) + v1 migration
+test/            smoke (1529) · dom (64) · admin (35) · store (24) · api (~120) — 1,770+ checks total
+```
+
+## Feature set
+
+| Area | Details |
+|---|---|
+| **Content** | 308 standalone items + 6 NCJMM case studies = 344-item pool tracking both 2026 blueprints; PN depth: 30 PN-scope items + CASE-LTC-01 with `fam` affinity (PN exams prefer PN-authored items and the PN case); 11 variant groups across 27 items; all 7 item formats in use; all 8 Client Needs; every item: rationale per option, NCLEX strategy, difficulty (label + numeric *b*), CJ step, system/topic, tags, reference |
+| **Practice** | Quick / Smart / Custom builder / by Client Need · system · topic · type · difficulty / Medication / Priority & Delegation / Timed; 30-item diagnostic → preparation profile; review-incorrect, bookmarks, review-later, re-test |
+| **Simulation** | Full NCLEX-RN 2026 (85–150 items, 5 h, 3 cases, 15 pretest — zero reuse), Preview (26–40), Timed 60; pre-flight consent, no backtracking, no feedback, blueprint-constrained adaptive selection, 95%-confidence stopping rule vs cut score |
+| **Clinical judgment** | Unfolding case studies with exhibit reveal schedules; six-step debrief mapped to NCJMM |
+| **Spaced repetition** | Missed concepts auto-schedule (SM-2-lite); Study → Spaced Review queue; interval growth 1→3→7→16→35+ days; Home task integration |
+| **Analytics** | Mastery by Client Need / system / type / CJ step / difficulty (recency-weighted), pacing, readiness score with weighted components + Knows/Thinks/Performs |
+| **Psychometrics (v3b)** | EAP ability estimation (2PL, wide normal prior) replaces the Elo update in all engine paths; exposure-aware item selection (least-exposed among the 5 best-targeting items); calibration pipeline over the response log with admin endpoints (`X-Admin-Key`): compute → apply empirical difficulty → persist → re-apply on boot; CLI `npm run calibrate` |
+| **Accounts & sync (v3a)** | Sign up / sign in / sign out in Settings; scrypt-hashed passwords, 30-day bearer tokens; progress uploads after each session and restores on any device; local progress merges (no data loss) |
+| **Persistence (v3a)** | Users, tokens, sims, and the full response log survive restarts (`data/store.json`) — the response log is the feed for future item calibration |
+| **Security** | Sanitized bank in the browser (no keys/rationales), server-side scoring, bank files never served (404), per-IP rate limits (auth 30/5 min, API 400/min), no plaintext secrets at rest |
+| **Authoring & review (v3c)** | Workflow draft → clinical review → approved → published with legal-transition enforcement and version history (outgoing items snapshotted, never silently overwritten); full item-schema validation; bulk import (AI drafts land as drafts — human review before anything reaches examinees); export for backup; published items grow the live bank via persistent boot-replayed patches; admin console at `/admin` (key-gated) |
+| **Anti-memorization (v3c/e)** | Items can carry a `variantGroup` (7 groups); the engine serves at most one member per exam/session in every selection path (practice, smart, diagnostic, simulation) and rotates re-tests to the least-exposed sibling |
+| **Key-gated explanations (v3c)** | `/api/item/:id/full` refuses (403) unless the requesting session already answered that item — rationales are never available before submission, even to a crafted request |
+| **NCLEX-PN 2026 (v3d)** | Full PN simulation from the official 2026 PN Test Plan: 85–150 items · 5 h · 3 CJ case sets · 15 pretest; PN blueprint (Coordinated Care 21% · S&IP&C 13% · HP&M 9% · Psych 12% · BCC 10% · Pharm 13% · RRP 12% · Phys Adapt 10%) with PN client-need naming, plus a short PN preview; per-exam blueprint is now engine data (`ExamConfiguration.blueprint`) — RN exams unchanged. Draws from the shared RN bank — disclosed in pre-flight as an approximation |
+| **Distractor analysis (v3d)** | Per-option pick rate + point-biserial vs rest-score for single/multi items from the response log; flags dead (<5%), attracts-strong (rpb >+0.20 on a non-key option), weak-key; `GET /api/admin/distractors` + admin-console card + CLI section |
+| **Study reminders (v3d)** | Daily reminder at a chosen time (Settings): browser notification when permission is granted, in-app fallback otherwise; exam-countdown and streak-aware messaging; persisted locally |
+| **PWA offline (v3c)** | Service worker precaches the key-free shell + sanitized bootstrap (build-stamped, old caches purged); offline answers queue in localStorage as pending (excluded from stats) and replay through `/api/answer` on reconnect — scoring stays server-side because the keys never leave the server |
+
+## Production deployment
+
+One-click cloud: **Render blueprint + Supabase Postgres** — see `DEPLOYMENT.md`
+(runbook), `render.yaml` (blueprint), `npm run db:migrate` (schema.sql, idempotent).
+
+```bash
+NODE_ENV=production ADMIN_KEY=<strong-key> npm start          # gate: refuses to boot without ADMIN_KEY
+NODE_ENV=production ADMIN_KEY=<key> \
+  TLS_CERT=/etc/tls/fullchain.pem TLS_KEY=/etc/tls/privkey.pem \
+  PORT=3000 TLS_PORT=3443 npm start                            # HTTPS alongside HTTP (same handler)
+STORE=pg DATABASE_URL=postgres://… PGSSL=require npm start    # Postgres backend (run db:migrate first)
+REQ_LOG=1 npm start                                            # per-request access log line
+```
+
+| Concern | What ships |
+|---|---|
+| Security headers | `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options: DENY`, CSP (`default-src 'self'`, `frame-ancestors 'none'`) on every response |
+| Error hook | JSONL error log at `data/errors.log`; `uncaughtException` (log + exit), `unhandledRejection` (log), request errors hooked |
+| Lifecycle | SIGTERM/SIGINT → store flush → close → exit (verified live); expired-token sweep hourly |
+| Secrets | `ADMIN_KEY` mandatory in production (boot gate + tested); scrypt passwords; bearer tokens expire |
+| Storage | JSON default (atomic, debounced) or per-table Postgres (schema.sql v2; TLS auto-required for Supabase/Render/RDS hosts) |
+| TLS | cert/key PEM paths + optional port; dev cert generation in `data/tls/` for testing only |
+
+## Honest limits (ongoing)
+
+- Practice *selection* is still client-side (scoring is server-side).
+- Calibration needs real candidate volume — current stats come mostly from test traffic (n≥8 gate, blend weight n/(n+20) protects against thin data).
+- Offline-queued answers score only on reconnect (keys are server-side by design) — pending items are excluded from stats until synced.
+- **v3m — deploy + scale**: `content.js` auto-discovers `js/bank<N>.js`/`js/case<N>.js` (drop a file in, add its script tag — the smoke drift guard fails on missing *or* stale tags; all loaders/linter/calibration/build/tests share it), one-click Render blueprint (`render.yaml`) + Supabase runbook (`DEPLOYMENT.md`) + idempotent `npm run db:migrate`, managed-Postgres TLS auto-detect, and `tools/draft-bank.mjs` — a bulk scaffolder that emits schema-valid drafts continuing each CN ID sequence for the governed import→review→approve→publish pipeline (verified live: published item reaches examinees, drafts never do; bank restored after retire). Bootstrap payload: 240 KB raw / 75 KB gzipped at 344 items (~250 B/item gzipped → thousands ≈ well under 1 MB). Health/banner versions now track `package.json`.
+- **v3l — governance + storage**: role-based authoring (AUTH_KEYS="key:role:name,…": author drafts, reviewer approves — with separation of duties, a reviewer cannot approve content they last edited — publisher releases; admin stays break-glass and self-approvals are tagged in history; 403 vs 400 semantics enforced), and per-table Postgres normalization (schema.sql v2: users/tokens/responses/sims/seen/authoring_records/bank_patches/meta; automatic v1→v2 document migration on first boot; ts-watermarked upsert responses mirroring the engine's replace-on-re-answer; legacy backup row kept for rollback).
+- Bank is 308 items (v3k: PN-specific depth — 30 PN-scope items written from the practical/vocational nurse perspective, a `fam` affinity system in the exam engine so PN sims prefer PN-authored items and the PN case study while RN sims draw the shared/RN pool, and CASE-LTC-01, a long-term-care delirium case; RN exams now declare examFamily:RN).
+- PN simulation shares the RN-focused bank under the PN blueprint — a PN-specific bank is the main content gap now that the authoring pipeline exists.
+- Reminders fire while the app is open (tab or installed PWA); no server push or closed-app delivery on the zero-dep stack.
+- Distractor statistics inherit the calibration caveat: current samples are mostly test traffic (n≥20 gating; dead/weak flags are provisional until real candidate volume).
+- Built-in TLS is for direct exposure/testing — put a real reverse proxy (Let's Encrypt, HTTP/2) in front for public deployments.
+- All bank content is AI-assisted drafting: mandatory human clinical review before any production use (the review workflow exists for exactly this).

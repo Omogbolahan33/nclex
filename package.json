@@ -1,0 +1,21 @@
+{
+  "name": "rn-ready",
+  "private": true,
+  "version": "3.12.0",
+  "description": "RN Ready — mobile-first NCLEX-RN preparation app (engine + zero-dep exam server)",
+  "scripts": {
+    "build": "node build-standalone.mjs && node build-online.mjs",
+    "start": "node server.js",
+    "test": "node test/smoke.mjs && node test/dom.mjs && node test/admin.mjs && node test/store.mjs",
+    "test:api": "node test/api.mjs",
+    "calibrate": "node calibrate.js",
+    "db:migrate": "node scripts/db-migrate.js",
+    "lint": "node itemlint.js"
+  },
+  "dependencies": {
+    "jsdom": "^29.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

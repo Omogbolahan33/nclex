@@ -1,0 +1,79 @@
+/* RN Ready — admin authoring console. Mobile-first 360–430px (review on your
+   phone), same design tokens as the examinee app. Server: /admin            */
+:root{
+  --teal:#0f766e; --teal-d:#0b5a54; --teal-l:#e6f4f2;
+  --ink:#12242b; --ink-2:#41565f; --ink-3:#71878f;
+  --bg:#f4f7f7; --card:#ffffff; --line:#e2eae9;
+  --ok:#15803d; --ok-l:#e9f7ee; --bad:#b91c1c; --bad-l:#fdeeee;
+  --warn:#b45309; --warn-l:#fdf3e3; --info:#1d4ed8; --info-l:#e8eefe;
+  --purple:#6d28d9; --purple-l:#f1eafe;
+  --r:14px; --shadow:0 1px 3px rgba(18,36,43,.08),0 8px 24px rgba(18,36,43,.06);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:16px;line-height:1.5}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+
+.wrap{max-width:430px;margin:0 auto;min-height:100vh;padding:14px 14px 40px}
+.topbar{display:flex;align-items:center;gap:10px;padding:2px 0 12px}
+.topbar h1{font-size:20px;margin:0;letter-spacing:-.01em}
+.topbar .sub{font-size:12.5px;color:var(--ink-3)}
+.spacer{flex:1}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);padding:14px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 10px;letter-spacing:-.01em}
+.muted{color:var(--ink-3);font-size:13px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+
+label.f{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:10px 0 4px;letter-spacing:.02em}
+input.f,select.f,textarea.f{width:100%;border:1px solid var(--line);border-radius:10px;
+  padding:9px 11px;background:var(--bg);font-size:15px}
+textarea.f{min-height:70px;resize:vertical}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;
+  border-radius:12px;font-weight:600;font-size:14.5px;background:var(--teal);color:#fff;
+  border:1px solid var(--teal-d)}
+.btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.btn.small{padding:6px 10px;font-size:13px;border-radius:10px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.danger{background:var(--bad);border-color:#991b1b}
+.btn.ok{background:var(--ok);border-color:#14532d}
+
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:700;letter-spacing:.03em}
+.badge.draft{background:var(--info-l);color:var(--info)}
+.badge.review{background:var(--warn-l);color:var(--warn)}
+.badge.approved{background:var(--purple-l);color:var(--purple)}
+.badge.published{background:var(--ok-l);color:var(--ok)}
+.badge.retired{background:var(--bad-l);color:var(--bad)}
+
+.queue-item{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer}
+.queue-item:last-child{border-bottom:none}
+.queue-item .qid{font-weight:700;font-size:13.5px}
+.queue-item .topic{font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.queue-item .right{margin-left:auto;text-align:right;flex:none}
+
+.history-item{padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.history-item:last-child{border-bottom:none}
+.history-item .when{color:var(--ink-3);font-size:11.5px}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;max-width:400px;width:calc(100% - 28px);
+  background:var(--ink);color:#fff;border-radius:12px;padding:11px 14px;font-size:13.5px;
+  box-shadow:var(--shadow);display:none;z-index:99}
+.toast.show{display:block}
+.toast.err{background:var(--bad)}
+
+.errors li{margin:2px 0}
+ul.errors{margin:6px 0;padding-left:20px;color:var(--bad);font-size:13.5px}
+
+.gate{max-width:360px;margin:18vh auto 0;text-align:center}
+.gate .lock{font-size:40px}
+.keybox{display:flex;gap:8px;margin-top:14px}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}
+.kv b{font-weight:600}
+.hidden{display:none!important}
+.prev{background:var(--bg);border:1px dashed var(--line);border-radius:10px;padding:10px;font-size:13px;white-space:pre-wrap;word-break:break-word}

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Publish gate: itemlint must report 0 HARD flags (DEPLOYMENT.md §7A)
+      - name: Lint item bank
+        run: npm run lint
+
+      # Unit + DOM + admin + store suites
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # API integration suite runs against a live server on :3000.
+      # It authenticates with the dev-default ADMIN_KEY, so no secrets needed.
+      - name: API integration tests
+        run: |
+          node server.js &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/api/health >/dev/null && break
+            sleep 1
+          done
+          npm run test:api
