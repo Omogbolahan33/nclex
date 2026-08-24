@@ -1,37 +1,46 @@
-# RN Ready — Render Blueprint (deploy in one click from a connected repo).
-# Docs: https://render.com/docs/blueprint-spec · Runbook: DEPLOYMENT.md
+# RN Ready — Render service settings, FOR REFERENCE ONLY.
+#
+# This project deploys as a manually created Web Service (Render dashboard →
+# New → Web Service). A manually created service does NOT read this file —
+# it is kept as a checked-in record of the exact settings, so the dashboard
+# and the repo can't drift apart. The runbook is DEPLOYMENT.md §3.
 #
 # Stack: one Node web service (the exam server) + external Supabase Postgres
-# (DATABASE_URL). The store normalizes into per-table rows (schema.sql v2);
-# run `npm run db:migrate` once against the database — Render's shell makes
-# this easy, or run locally with the same DATABASE_URL.
+# (DATABASE_URL). Run `npm run db:migrate` once against the database from your
+# machine (Render's Shell is a paid feature).
 
 services:
   - type: web
     name: rn-ready-exam
     runtime: node
-    region: oregon                     # pick the region nearest your users
-    plan: starter                      # free tier works for pilots (sleeps)
+    region: oregon                     # match your Supabase region
+    plan: free                         # free instances sleep after idle
     buildCommand: npm ci && npm i pg && node build-online.mjs
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
+      # NODE_ENV=production arms the boot gate (server refuses to start
+      # without ADMIN_KEY) and makes npm ci skip devDependencies.
       - key: NODE_ENV
         value: production
+      # Free tier has no persistent disk — the filesystem resets on every
+      # deploy, so an external Postgres is mandatory, not optional.
       - key: STORE
         value: pg
       # Supabase → Settings → Database → Connection string → Session pooler URI
+      # (port 5432, NOT the transaction pooler on 6543).
       - key: DATABASE_URL
         sync: false                    # secret — paste in the Render dashboard
       - key: PGSSL
         value: require                 # managed Postgres needs TLS
       - key: PG_STORE_KEY
         value: state
-      # Break-glass admin key. generateValue creates one; read it back in the
-      # dashboard and store it in your password manager BEFORE first login.
+      # Break-glass admin key. On the manual path you generate this yourself:
+      #   node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+      # Store it in your password manager BEFORE first login.
       - key: ADMIN_KEY
-        generateValue: true
+        sync: false                    # secret — paste in the Render dashboard
       # Staff authoring keys: "key:role:name,key:role:name"
       # roles: author | reviewer | publisher | editor (see authoring.ACTIONS)
       - key: AUTH_KEYS

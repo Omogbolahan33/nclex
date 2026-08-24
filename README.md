@@ -86,8 +86,14 @@ test/            smoke (1529) · dom (64) · admin (35) · store (24) · api (~1
 
 ## Production deployment
 
-One-click cloud: **Render blueprint + Supabase Postgres** — see `DEPLOYMENT.md`
-(runbook), `render.yaml` (blueprint), `npm run db:migrate` (schema.sql, idempotent).
+Cloud: **Render Web Service (free tier) + Supabase Postgres** — see
+`DEPLOYMENT.md` (runbook), `render.yaml` (checked-in record of the dashboard
+settings), `npm run db:migrate` (schema.sql, idempotent).
+
+Create the service by hand (**New → Web Service**); no Blueprint required.
+Build `npm ci && npm i pg && node build-online.mjs`, start `npm start`, health
+`/api/health`. Free instances have no persistent disk, so `STORE=pg` against an
+external database is mandatory.
 
 ```bash
 NODE_ENV=production ADMIN_KEY=<strong-key> npm start          # gate: refuses to boot without ADMIN_KEY
@@ -112,7 +118,7 @@ REQ_LOG=1 npm start                                            # per-request acc
 - Practice *selection* is still client-side (scoring is server-side).
 - Calibration needs real candidate volume — current stats come mostly from test traffic (n≥8 gate, blend weight n/(n+20) protects against thin data).
 - Offline-queued answers score only on reconnect (keys are server-side by design) — pending items are excluded from stats until synced.
-- **v3m — deploy + scale**: `content.js` auto-discovers `js/bank<N>.js`/`js/case<N>.js` (drop a file in, add its script tag — the smoke drift guard fails on missing *or* stale tags; all loaders/linter/calibration/build/tests share it), one-click Render blueprint (`render.yaml`) + Supabase runbook (`DEPLOYMENT.md`) + idempotent `npm run db:migrate`, managed-Postgres TLS auto-detect, and `tools/draft-bank.mjs` — a bulk scaffolder that emits schema-valid drafts continuing each CN ID sequence for the governed import→review→approve→publish pipeline (verified live: published item reaches examinees, drafts never do; bank restored after retire). Bootstrap payload: 240 KB raw / 75 KB gzipped at 344 items (~250 B/item gzipped → thousands ≈ well under 1 MB). Health/banner versions now track `package.json`.
+- **v3m — deploy + scale**: `content.js` auto-discovers `js/bank<N>.js`/`js/case<N>.js` (drop a file in, add its script tag — the smoke drift guard fails on missing *or* stale tags; all loaders/linter/calibration/build/tests share it), Render Web Service settings (`render.yaml`) + Supabase runbook (`DEPLOYMENT.md`) + idempotent `npm run db:migrate`, managed-Postgres TLS auto-detect, and `tools/draft-bank.mjs` — a bulk scaffolder that emits schema-valid drafts continuing each CN ID sequence for the governed import→review→approve→publish pipeline (verified live: published item reaches examinees, drafts never do; bank restored after retire). Bootstrap payload: 240 KB raw / 75 KB gzipped at 344 items (~250 B/item gzipped → thousands ≈ well under 1 MB). Health/banner versions now track `package.json`.
 - **v3l — governance + storage**: role-based authoring (AUTH_KEYS="key:role:name,…": author drafts, reviewer approves — with separation of duties, a reviewer cannot approve content they last edited — publisher releases; admin stays break-glass and self-approvals are tagged in history; 403 vs 400 semantics enforced), and per-table Postgres normalization (schema.sql v2: users/tokens/responses/sims/seen/authoring_records/bank_patches/meta; automatic v1→v2 document migration on first boot; ts-watermarked upsert responses mirroring the engine's replace-on-re-answer; legacy backup row kept for rollback).
 - Bank is 308 items (v3k: PN-specific depth — 30 PN-scope items written from the practical/vocational nurse perspective, a `fam` affinity system in the exam engine so PN sims prefer PN-authored items and the PN case study while RN sims draw the shared/RN pool, and CASE-LTC-01, a long-term-care delirium case; RN exams now declare examFamily:RN).
 - PN simulation shares the RN-focused bank under the PN blueprint — a PN-specific bank is the main content gap now that the authoring pipeline exists.
