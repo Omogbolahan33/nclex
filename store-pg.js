@@ -63,7 +63,7 @@ const profOf = u => { const p = { ...u }; delete p.hash; delete p.salt; delete p
 /* ── table → doc rebuild ─────────────────────────────────────────────── */
 async function readTables(){
   const q = async s => (await getPool().query(s)).rows;
-  const [metaR, usersR, tokensR, simsR, seenR, authR, patchR, respR] = await Promise.all([
+  const [metaR, usersR, tokensR, simsR, seenR, authR, patchR, respR, itemsR, casesR] = await Promise.all([
     q("SELECT k, v FROM meta"),
     q("SELECT email, hash, salt, profile FROM users"),
     q("SELECT token, email, expires FROM tokens"),
@@ -73,8 +73,10 @@ async function readTables(){
     q("SELECT qid, op, item FROM bank_patches"),
     q(`SELECT owner, sid, qid, ans, score, answered, ts, mode, time_ms, timed
        FROM responses ORDER BY ts ASC`),   // both owners; split in docFromTables
+    q("SELECT qid, item FROM items"),
+    q("SELECT cid, payload FROM cases"),
   ]);
-  return { metaR, usersR, tokensR, simsR, seenR, authR, patchR, respR };
+  return { metaR, usersR, tokensR, simsR, seenR, authR, patchR, respR, itemsR, casesR };
 }
 function rowToResponse(r){
   return { qid:r.qid, sid:r.sid, mode:r.mode, ans:r.ans, score:r.score,
@@ -93,6 +95,8 @@ function docFromTables(t){
   doc.seen = {}; t.seenR.forEach(x => { doc.seen[x.qid] = x.n; });
   doc.authoring = {}; t.authR.forEach(x => { doc.authoring[x.qid] = x.record; });
   doc.bankPatches = {}; t.patchR.forEach(x => { doc.bankPatches[x.qid] = { op:x.op, item:x.item }; });
+  doc.items = (t.itemsR||[]).map(x => x.item).filter(Boolean);
+  doc.cases = (t.casesR||[]).map(x => x.payload).filter(Boolean);
   t.metaR.forEach(m => {
     if (m.k === "calibration" && m.v) doc.calibration = m.v;
   });
@@ -212,7 +216,7 @@ async function loadAsync(){
     watermarkTs = Number(maxTs.rows?.[0]?.m || 0);
     tablesRead = true;
     if (!data) data = blank();
-    for (const k of ["users","tokens","sims","responses","seen","authoring","bankPatches","calibration"])
+    for (const k of ["users","tokens","sims","responses","seen","authoring","bankPatches","calibration","items","cases"])
       delete data[k];
     Object.assign(data, doc);
     data.users = data.users || {}; data.tokens = data.tokens || {};

@@ -10,7 +10,8 @@
     "test:api": "node test/api.mjs",
     "calibrate": "node calibrate.js",
     "db:migrate": "node scripts/db-migrate.js",
-    "lint": "node itemlint.js"
+    "lint": "node itemlint.js",
+    "db:seed": "node scripts/db-seed.js"
   },
   "dependencies": {
     "pg": "^8.16.3"

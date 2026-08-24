@@ -11,6 +11,9 @@
 --   seen                      item-exposure counters (anti-memorization)
 --   authoring_records         draft→review→approved→published→retired state
 --   bank_patches              published/retired item patches replayed at boot
+--   items / cases             the content bank itself, seeded from js/bank*.js
+--                             by scripts/db-seed.js and overlaid onto the
+--                             in-repo baseline at boot (see server.js hydrate)
 --   meta                      schema version, calibration report, migration flag
 --   store (v1 legacy)         kept as migration source + per-flush backup doc
 --
@@ -95,10 +98,30 @@ CREATE TABLE IF NOT EXISTS bank_patches (
 CREATE OR REPLACE FUNCTION store_doc_size() RETURNS BIGINT
 LANGUAGE sql AS $$ SELECT COALESCE(octet_length(doc::text), 0) FROM store WHERE key = 'state'; $$;
 
+-- ── content bank ─────────────────────────────────────────────────────────
+-- Seeded by `npm run db:seed` from js/bank*.js / js/case*.js, then read at
+-- boot and overlaid onto the in-memory baseline. The server never writes
+-- these tables during normal operation, so an edit made here is authoritative
+-- and survives every flush; the authoring pipeline still publishes through
+-- bank_patches, which applies on top.
+CREATE TABLE IF NOT EXISTS items (
+  qid        TEXT PRIMARY KEY,
+  item       JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS cases (
+  cid        TEXT PRIMARY KEY,
+  payload    JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE OR REPLACE VIEW store_table_sizes AS
 SELECT 'responses' AS tbl, count(*)::BIGINT AS rows FROM responses
 UNION ALL SELECT 'users',        count(*) FROM users
 UNION ALL SELECT 'sims',         count(*) FROM sims
 UNION ALL SELECT 'tokens',       count(*) FROM tokens
 UNION ALL SELECT 'authoring_records', count(*) FROM authoring_records
-UNION ALL SELECT 'bank_patches', count(*) FROM bank_patches;
+UNION ALL SELECT 'bank_patches', count(*) FROM bank_patches
+UNION ALL SELECT 'items',        count(*) FROM items
+UNION ALL SELECT 'cases',        count(*) FROM cases;

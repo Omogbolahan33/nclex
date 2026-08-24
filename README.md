@@ -88,7 +88,14 @@ test/            smoke (1529) · dom (64) · admin (35) · store (24) · api (~1
 
 Cloud: **Render Web Service (free tier) + Supabase Postgres** — see
 `DEPLOYMENT.md` (runbook), `render.yaml` (checked-in record of the dashboard
-settings), `npm run db:migrate` (schema.sql, idempotent).
+settings), `npm run db:migrate` (schema.sql, idempotent), then
+`npm run db:seed` (loads the bank into the `items`/`cases` tables).
+
+The content bank lives in Postgres at runtime: the server reads `items` and
+`cases` at boot and overlays them on the in-repo bank, so editing a row in
+the database changes what examinees see on the next restart without a
+redeploy. `js/bank*.js` remain the seed source, the `standalone.html` build
+input, and the fallback when the database is empty or unreachable.
 
 Create the service by hand (**New → Web Service**); no Blueprint required.
 Build `npm ci && node build-online.mjs`, start `npm start`, health

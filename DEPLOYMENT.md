@@ -9,7 +9,7 @@ dependency is the `pg` driver, declared in `package.json` so any standard
 |---|---|---|
 | Web | Node 20+, `npm start`, health `/api/health` | Render Web Service (free tier) |
 | DB | Postgres, per-table schema (`schema.sql`) | Supabase (or any managed PG) |
-| Items | `js/bank*.js` + `js/case*.js`, auto-discovered | in repo (`content.js`) |
+| Items | `js/bank*.js` + `js/case*.js`, auto-discovered | in repo (`content.js`), seeded to `items`/`cases` via `npm run db:seed` |
 | Auth | `X-Admin-Key` header = `ADMIN_KEY` or a staff key | env vars |
 
 ---
@@ -131,6 +131,52 @@ so no extra flags are needed. Expected output ends with the table inventory:
   users               5 cols
 ```
 
+## 4b. Seed the content bank into the database
+
+The migration creates the tables; this fills `items` and `cases` with the
+344-item bank read from `js/bank*.js` / `js/case*.js`. Idempotent — re-run
+after editing the repo bank to push the changes up.
+
+```bash
+DATABASE_URL="postgresql://…" npm run db:seed
+```
+
+```
+[db:seed] repo: 308 items, 6 cases
+[db:seed] database before: 0 items, 0 cases
+[db:seed] database after:  308 items, 6 cases
+```
+
+At boot the server reads these tables and overlays them on the in-repo bank:
+a row replaces the item sharing its id, a new id is appended. The log says so:
+
+```
+bank from database: 308 replaced, 0 added (308 items live)
+cases from database: 6 replaced, 0 added (6 cases live)
+```
+
+**What this buys you.** Editing an item row in Supabase changes what
+examinees see on the next restart — no redeploy, no code change. The server
+never writes these tables during normal operation, so a SQL edit is
+authoritative and survives every flush.
+
+**Precedence**, lowest to highest: the in-repo bank → the `items`/`cases`
+tables → authoring-pipeline patches (`bank_patches`) → calibration. The
+governed draft→review→publish flow therefore still wins over a raw SQL edit.
+
+**Fallback.** An empty or unreachable database leaves the repo bank in place,
+so the app always boots with a full bank.
+
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | report what would change, write nothing |
+| `--prune` | delete rows whose id is no longer in the repo bank (off by default, so database-only items are preserved) |
+
+> `npm run db:seed` also doubles as the restore path: it rewrites every row
+> from the repo, undoing an unwanted SQL edit.
+
 ## 5. Verify the deployment
 
 ```bash
@@ -221,3 +267,6 @@ edit unless admin) — see README's authoring section.
 | Health OK but logins don't persist | Same as above, or wrong `DATABASE_URL` (check `[store:pg]` log lines). |
 | 403 `not permitted for role` | Expected RBAC — check the key's role in `AUTH_KEYS`; `ADMIN_KEY` can do everything. |
 | Slow cold starts | Free/starter plan sleeps; upgrade plan or accept first-request latency. |
+| Item edit in Supabase has no effect | The overlay is read at boot — restart the service. Confirm the log shows `bank from database: … replaced`. |
+| Bank looks stale after editing `js/bank*.js` | The database overlay wins over the repo file. Re-run `npm run db:seed` to push the repo bank up. |
+| `npm run db:seed` says pg driver missing | Run `npm ci` — `npm test` used to delete `node_modules/pg`; it now restores it. |

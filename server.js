@@ -61,6 +61,29 @@ function hydrate(){ // links live engine refs to the persisted doc (re-runnable 
     D.seen = engState.seen;
     store.save();
   };
+  // Content bank from the database (STORE=pg), overlaid on the in-repo
+  // baseline: a row replaces the item sharing its id, or is appended when the
+  // id is new. Seed the tables with `npm run db:seed`. An empty or unreachable
+  // database simply leaves the repo bank in place, so the app still boots.
+  // Authoring patches apply after this, keeping the governed pipeline on top.
+  if (Array.isArray(D.items) && D.items.length){
+    let replaced = 0, added = 0;
+    for (const it of D.items){
+      if (!it || !it.id) continue;
+      const i = NC.BANK.findIndex(q => q.id === it.id);
+      if (i >= 0){ NC.BANK[i] = it; replaced++; } else { NC.BANK.push(it); added++; }
+    }
+    console.log(`bank from database: ${replaced} replaced, ${added} added (${NC.BANK.length} items live)`);
+  }
+  if (Array.isArray(D.cases) && D.cases.length){
+    let replaced = 0, added = 0;
+    for (const c of D.cases){
+      if (!c || !c.id) continue;
+      const i = NC.CASES.findIndex(x => x.id === c.id);
+      if (i >= 0){ NC.CASES[i] = c; replaced++; } else { NC.CASES.push(c); added++; }
+    }
+    console.log(`cases from database: ${replaced} replaced, ${added} added (${NC.CASES.length} cases live)`);
+  }
   if (D.bankPatches && Object.keys(D.bankPatches).length){
     const rep = authoring.applyPatches(NC, D);
     console.log(`re-applied authoring patches: ${rep.set} set, ${rep.removed} removed`);

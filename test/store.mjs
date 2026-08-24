@@ -37,7 +37,7 @@ console.log("— Postgres adapter v2 (normalized, in-memory fake pg) —");
 {
   /* mini database: real row storage so migration, watermark appends and
      round-trips can be verified end-to-end without a live Postgres        */
-  const db = { store:{}, meta:{}, users:{}, tokens:{}, responses:new Map(), sims:{}, seen:{}, authoring:{}, patches:{} };
+  const db = { store:{}, meta:{}, users:{}, tokens:{}, responses:new Map(), sims:{}, seen:{}, authoring:{}, patches:{}, items:{}, cases:{} };
   let respSeq = 1;
   const inTx = [];
   class FakeClient {
@@ -62,6 +62,8 @@ console.log("— Postgres adapter v2 (normalized, in-memory fake pg) —");
     if (q.startsWith("SELECT qid, n")) return { rows: Object.entries(db.seen).map(([qid,n])=>({qid,n})) };
     if (q.startsWith("SELECT qid, record")) return { rows: Object.entries(db.authoring).map(([qid,record])=>({qid,record})) };
     if (q.startsWith("SELECT qid, op, item")) return { rows: Object.entries(db.patches).map(([qid,x])=>({qid,...x})) };
+    if (q.startsWith("SELECT qid, item FROM items")) return { rows: Object.entries(db.items).map(([qid,item])=>({qid,item})) };
+    if (q.startsWith("SELECT cid, payload FROM cases")) return { rows: Object.entries(db.cases).map(([cid,payload])=>({cid,payload})) };
     if (q.startsWith("SELECT owner, sid, qid")) return { rows: [...db.responses.values()].sort((a,b)=>a.ts-b.ts) };
     if (q.startsWith("SELECT COALESCE(max(ts)")) return { rows: [{ m: Math.max(0, ...[...db.responses.values()].map(r=>r.ts)) }] };
     // meta upserts
@@ -112,6 +114,21 @@ console.log("— Postgres adapter v2 (normalized, in-memory fake pg) —");
   }
   const fakePg = { Pool: FakePool };
   const shimDir = path.join(root, "node_modules", "pg");
+  // The shim is written over the real driver's path and torn down at the end
+  // of this block, which would silently uninstall a genuine pg install that
+  // db:migrate / db:seed / STORE=pg all need. Stash it and put it back.
+  const backupDir = shimDir + ".real-backup";
+  let restoreReal = false;
+  if (fs.existsSync(shimDir)){
+    try {
+      const v = JSON.parse(fs.readFileSync(path.join(shimDir,"package.json"),"utf8")).version;
+      if (v !== "0.0.0-stub"){
+        fs.rmSync(backupDir, { recursive:true, force:true });
+        fs.renameSync(shimDir, backupDir);
+        restoreReal = true;
+      }
+    } catch(e){}
+  }
   fs.mkdirSync(shimDir, { recursive:true });
   fs.writeFileSync(path.join(shimDir, "package.json"), JSON.stringify({ name:"pg", version:"0.0.0-stub", main:"index.js" }));
   fs.writeFileSync(path.join(shimDir, "index.js"), "module.exports = globalThis.__FAKE_PG__;");
@@ -165,6 +182,31 @@ console.log("— Postgres adapter v2 (normalized, in-memory fake pg) —");
   await storePg.loadAsync();
   ok(d2.users["b@x.com"] && d2.responses.length===2, "boot #2 rebuilds from normalized tables alone");
 
+  /* content bank: items/cases tables are READ into the doc, and never written
+     back by a flush — the server must not clobber a row edited in SQL */
+  db.items["MOC-001"] = { id:"MOC-001", t:"single", stem:"from the database", opts:["a","b"], ans:0 };
+  db.items["NEW-001"] = { id:"NEW-001", t:"single", stem:"db-only item", opts:["a","b"], ans:1 };
+  db.cases["CASE-DB-1"] = { id:"CASE-DB-1", title:"db case", items:[] };
+  storePg._reset();
+  const d3 = storePg.load();
+  await storePg.loadAsync();
+  ok(Array.isArray(d3.items) && d3.items.length===2, "items table read into doc.items ("+(d3.items||[]).length+")");
+  ok(d3.items.some(i=>i.id==="MOC-001") && d3.items.some(i=>i.id==="NEW-001"), "both overriding and db-only items surface");
+  ok(Array.isArray(d3.cases) && d3.cases.length===1 && d3.cases[0].id==="CASE-DB-1", "cases table read into doc.cases");
+
+  const itemsSnapshot = JSON.stringify(db.items), casesSnapshot = JSON.stringify(db.cases);
+  d3.responses.push({ qid:"MOC-003", sid:"srv:s9", mode:"practice", ans:1, score:1, answered:true, ts:5000, timeMs:1000, timed:false });
+  await storePg.saveNow();
+  ok(JSON.stringify(db.items)===itemsSnapshot, "flush never rewrites the items table (SQL edits survive)");
+  ok(JSON.stringify(db.cases)===casesSnapshot, "flush never rewrites the cases table");
+
+  /* empty content tables must not wipe the in-repo baseline */
+  db.items = {}; db.cases = {};
+  storePg._reset();
+  const d4 = storePg.load();
+  await storePg.loadAsync();
+  ok(Array.isArray(d4.items) && d4.items.length===0, "empty items table yields an empty overlay, not a crash");
+
   /* dead database: logged, never thrown */
   globalThis.__FAKE_PG__ = { Pool: function(){ return { query: async ()=>{ throw new Error("connection lost"); }, connect: async ()=>{ throw new Error("down"); } }; } };
   storePg._reset();
@@ -173,6 +215,7 @@ console.log("— Postgres adapter v2 (normalized, in-memory fake pg) —");
   ok(typeof quiet.users === "object", "adapter survives a dead database (logged, no crash)");
 
   fs.rmSync(shimDir, { recursive:true, force:true });
+  if (restoreReal) fs.renameSync(backupDir, shimDir);   // real driver back in place
 }
 
 console.log("— dispatcher —");
