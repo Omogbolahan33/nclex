@@ -12,6 +12,9 @@
     "db:migrate": "node scripts/db-migrate.js",
     "lint": "node itemlint.js"
   },
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
   "engines": {
     "node": ">=20"
   },

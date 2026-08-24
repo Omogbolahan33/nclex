@@ -47,7 +47,12 @@ let watermarkTs = 0, tablesRead = false;
 function drv(){
   if (pg) return pg;
   try { pg = require("pg"); }
-  catch(e){ throw new Error("STORE=pg but the pg driver is not installed — run: npm i pg"); }
+  catch(e){
+    // Unrecoverable: unlike a network blip this can never resolve by retrying,
+    // so it must abort the boot rather than degrade to an in-memory store.
+    const err = new Error("STORE=pg but the pg driver is not installed — run: npm i pg");
+    err.fatal = true; throw err;
+  }
   return pg;
 }
 function getPool(){ if (!pool){ drv(); pool = new pg.Pool(POOL_OPTS); } return pool; }
@@ -214,6 +219,10 @@ async function loadAsync(){
     data.sims = data.sims || []; data.responses = data.responses || [];
     return data;
   } catch(e){
+    // Transient failures (network, restarting database) fall back to the
+    // in-memory doc and reconcile on the next read. Fatal ones must not:
+    // serving with a blank store silently discards every write.
+    if (e && e.fatal) throw e;
     console.error("[store-pg] loadAsync failed:", e.message);
     return data || (data = blank());
   }
@@ -221,7 +230,9 @@ async function loadAsync(){
 function load(){
   if (data) return data;
   data = blank();
-  loadAsync();          // reconciles as soon as the database answers
+  loadAsync().catch(e=>{ // reconciles as soon as the database answers
+    if (e && e.fatal){ console.error("[fatal] store init failed:", e.message); process.exit(1); }
+  });
   return data;
 }
 function save(){ if (timer) return; timer = setTimeout(()=>{ timer=null; flush(); }, 250); }
@@ -247,4 +258,5 @@ async function writeDb(snap){
 }
 
 module.exports = { load, loadAsync, save, saveNow, FILE: "postgres:"+KEY,
+  connected: () => tablesRead,
   _reset(){ data=null; if(timer){clearTimeout(timer); timer=null;} writeChain=Promise.resolve(); watermarkTs=0; tablesRead=false; } };

@@ -1,8 +1,9 @@
 # RN Ready — Deployment & Scale Runbook
 
 One Render web service + one managed Postgres (Supabase recommended). The app
-itself is a zero-dependency Node server (`server.js`); only the Postgres store
-needs the `pg` driver, installed at deploy time.
+server itself uses no framework — `server.js` is plain Node. The only runtime
+dependency is the `pg` driver, declared in `package.json` so any standard
+`npm ci` installs it.
 
 | Piece | What | Where |
 |---|---|---|
@@ -58,7 +59,7 @@ created service.
    | Branch | `main` |
    | Region | nearest your users — **match your Supabase region** |
    | Root Directory | *(leave blank — the app is at the repo root)* |
-   | Build Command | `npm ci && npm i pg && node build-online.mjs` |
+   | Build Command | `npm ci && node build-online.mjs` |
    | Start Command | `npm start` |
    | Instance Type | **Free** |
 
@@ -106,7 +107,7 @@ free tier this is the only route. Clone the repo, then with the same
 connection string from step 2:
 
 ```bash
-npm i pg
+npm ci
 DATABASE_URL="postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres" \
   npm run db:migrate
 ```
@@ -135,10 +136,17 @@ so no extra flags are needed. Expected output ends with the table inventory:
 ```bash
 BASE=https://<your-service>.onrender.com
 
-curl $BASE/api/health          # {"ok":true,"items":308,"cases":6,…,"version":"3.12.0"}
+curl $BASE/api/health          # {"ok":true,…,"store":{…,"persisted":true},…}
 curl -H "X-Admin-Key: $ADMIN_KEY" $BASE/api/admin/export | head -c 300
 curl -H "X-Admin-Key: <staff-key>" $BASE/api/admin/items   # queue — echoes you:{name,role}
 ```
+
+> **Check `store.persisted` first.** `true` means the server has read your
+> Postgres tables and writes are landing there. `false` means it is running
+> **in memory only and silently discarding every write** — the health check
+> still returns 200 so the platform does not restart-loop, so this field is
+> your only outside signal. If it is false, check the logs for `[store-pg]`
+> lines and confirm `DATABASE_URL` and that step 4 ran.
 
 - `items` = standalone bank items; `cases` = case sets (344 total at repo default).
 - Without a key, admin endpoints return 401; wrong role returns

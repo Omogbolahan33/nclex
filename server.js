@@ -232,6 +232,10 @@ const requestHandler = async (req,res)=>{
         responseLog:D.responses.length, exposureTracked:Object.keys(D.seen||{}).length,
         calibrated: !!(D.calibration && D.calibration.items && D.calibration.items.length),
         authoring: Object.values(D.authoring||{}).reduce((a,r)=>{ a[r.status]=(a[r.status]||0)+1; return a; },{}),
+        // Persistence status. Stays 200 either way so the platform health check
+        // does not restart-loop, but "persisted:false" on a pg store means
+        // writes are only in memory — check the logs for [store-pg] lines.
+        store: { backend: store.FILE, persisted: store.connected ? store.connected() : true },
         version: require("./package.json").version });
 
     if (u.startsWith("/api/auth/")){

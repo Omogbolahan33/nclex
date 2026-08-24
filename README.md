@@ -91,7 +91,7 @@ Cloud: **Render Web Service (free tier) + Supabase Postgres** — see
 settings), `npm run db:migrate` (schema.sql, idempotent).
 
 Create the service by hand (**New → Web Service**); no Blueprint required.
-Build `npm ci && npm i pg && node build-online.mjs`, start `npm start`, health
+Build `npm ci && node build-online.mjs`, start `npm start`, health
 `/api/health`. Free instances have no persistent disk, so `STORE=pg` against an
 external database is mandatory.
 

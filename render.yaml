@@ -15,7 +15,7 @@ services:
     runtime: node
     region: oregon                     # match your Supabase region
     plan: free                         # free instances sleep after idle
-    buildCommand: npm ci && npm i pg && node build-online.mjs
+    buildCommand: npm ci && node build-online.mjs
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
