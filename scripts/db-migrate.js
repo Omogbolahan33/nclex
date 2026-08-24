@@ -33,7 +33,8 @@ async function main(){
     await client.query(ddl);
     const inv = await client.query(`
       SELECT table_name, (SELECT count(*) FROM information_schema.columns c
-        WHERE c.table_name = t.table_name) AS cols
+        WHERE c.table_name = t.table_name
+          AND c.table_schema = t.table_schema) AS cols
       FROM information_schema.tables t
       WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name`);
     console.log("[db:migrate] applied schema.sql — tables now:");

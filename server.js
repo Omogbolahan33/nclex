@@ -463,9 +463,16 @@ setInterval(sweepTokens, 3600e3).unref();
 
 function graceful(sig){
   console.log(`\n${sig} — shutting down (flushing store)…`);
-  try { store.saveNow(); } catch(e){}
-  server.close(()=>process.exit(0));
-  setTimeout(()=>process.exit(0), 3000).unref();
+  // saveNow() is synchronous for the JSON store but returns a promise for
+  // Postgres. Exiting without awaiting it aborts the final transaction
+  // mid-flight and loses the writes it was carrying — and the platform
+  // sends SIGTERM on every deploy and every idle sleep.
+  const flushed = Promise.resolve()
+    .then(()=>store.saveNow())
+    .catch(e=>console.error("[shutdown] store flush failed:", e.message));
+  server.close(()=>{});                 // stop accepting new connections now
+  flushed.then(()=>{ console.log("store flushed — exiting"); process.exit(0); });
+  setTimeout(()=>{ console.error("[shutdown] flush timed out — exiting anyway"); process.exit(1); }, 10000).unref();
 }
 process.on("SIGTERM", ()=>graceful("SIGTERM"));
 process.on("SIGINT",  ()=>graceful("SIGINT"));
