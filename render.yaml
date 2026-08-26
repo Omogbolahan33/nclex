@@ -45,6 +45,12 @@ services:
       # roles: author | reviewer | publisher | editor (see authoring.ACTIONS)
       - key: AUTH_KEYS
         sync: false                    # secret — paste in the Render dashboard
+      # Demo / practice question set switch (DEPLOYMENT.md §4c).
+      # Seed once from your machine: DATABASE_URL="…" npm run db:seed:demo
+      # "1" serves ONLY the 128-question demo set; anything else (or absent)
+      # serves the regular bank and ignores demo rows in the database.
+      - key: DEMO_BANK
+        value: "0"
       # Optional niceties
       - key: PG_POOL_MAX
         value: "5"
