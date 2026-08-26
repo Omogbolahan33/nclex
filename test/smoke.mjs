@@ -265,6 +265,47 @@ console.log("— full 85–150 simulation runs without reuse —");
   ok(served.length===new Set(served).size, `simulation served ≤1 item per variant group (${served.length} grouped serves)`);
 }
 
+console.log("— sims survive JSON persistence (pretest slots) —");
+{
+  // Sims are stored as JSON (localStorage; JSONB rows under STORE=pg), so no
+  // field on a sim may be a Set: it stringifies to {}. Regression for
+  // "sim.pretestAt.has is not a function" — a restart used to crash /api/sim/next
+  // on every in-flight exam.
+  const st = NC.load();
+  const fresh = NC.newSim("nclex-rn-2026");
+  ok(JSON.parse(JSON.stringify(fresh.pretestAt)).length > 0, "pretest slots survive a JSON round-trip");
+
+  // rehydrate the way hydrate() does: the doc read back from the store replaces
+  // the live sim, then the engine must keep serving items.
+  const revived = JSON.parse(JSON.stringify(fresh));
+  st.sims[st.sims.indexOf(fresh)] = revived;
+  ok(NC.simNext(revived).kind === "item", "revived sim serves its next item");
+
+  // sims written before the fix carry pretestAt as the flattened {} (or nothing);
+  // slots are re-planned from cfg rather than crashing.
+  for (const legacy of [{}, undefined]){
+    const old = JSON.parse(JSON.stringify(fresh));
+    old.id = "legacy" + (legacy ? "-obj" : "-missing");
+    if (legacy) old.pretestAt = legacy; else delete old.pretestAt;
+    st.sims.push(old);
+    ok(NC.simNext(old).kind === "item", "legacy sim (" + old.id + ") serves its next item");
+    ok(Array.isArray(old.pretestAt) && old.pretestAt.join() === fresh.pretestAt.join(),
+       "legacy sim (" + old.id + ") re-plans the same slots [" + old.pretestAt.join(",") + "]");
+  }
+
+  // pretest items are still marked, and never scored
+  const walk = NC.newSim("nclex-rn-2026");
+  let g = 0, pretests = 0;
+  while (g++ < 200){
+    const nxt = NC.simNext(walk);
+    if (nxt.kind === "done") break;
+    if (nxt.kind === "item"){ if (nxt.pretest) pretests++; NC.simAnswer(walk, nxt.item, wrongAnsFor(nxt.item), 60000); }
+    else for (const it of nxt.case.items) NC.simCaseItemAnswered(walk, nxt.case, it.step, wrongAnsFor(it), 60000);
+  }
+  ok(pretests === walk.cfg.pretestItems, `served ${pretests}/${walk.cfg.pretestItems} pretest items`);
+  ok(walk.administered.filter(x=>x.pretest).every(x=>x.scored===false), "pretest items are never scored");
+}
+
 console.log("— PN depth: family affinity + PN blueprint tracking —");
 {
   const pn = NC.BANK.filter(q=>q.fam==="PN"), rn = NC.BANK.filter(q=>q.fam==="RN");

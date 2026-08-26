@@ -404,6 +404,24 @@ NC.diagnosticPick = function(count){
 };
 
 /* ── simulation (CAT-style) ── */
+/* Pretest slots (by answered-item count) are planned once at sim start and must
+   survive persistence: sims are stored as JSON, and a Set stringifies to {}, so
+   they live on the sim as a plain array. Sims written before that — or reloaded
+   from a store that flattened the Set — are re-planned from cfg by the same
+   deterministic formula, so a resumed exam keeps its original slots. */
+function planPretestAt(cfg){
+  const at = [];
+  if (!cfg || !(cfg.pretestItems > 0)) return at;
+  const step = Math.max(4, Math.floor(cfg.maxItems/cfg.pretestItems));
+  for (let i=step; at.length<cfg.pretestItems && i<cfg.maxItems; i+=step) at.push(i);
+  return at;
+}
+function pretestSlots(sim){
+  const at = sim.pretestAt;
+  if (Array.isArray(at)) return at;
+  if (at && typeof at.has === "function") return (sim.pretestAt = [...at]); // live Set
+  return (sim.pretestAt = planPretestAt(sim.cfg || NC.EXAMS[sim.examId]));
+}
 NC.newSim = function(examId){
   const cfg = NC.EXAMS[examId];
   const st = S();
@@ -418,9 +436,7 @@ NC.newSim = function(examId){
   // plan case insertion points (by answered-item count)
   const span = Math.floor(cfg.maxItems*0.6);
   const caseSlots = cases.map((_,i)=> Math.max(6, Math.round(span*(i+1)/(cfg.caseStudies+1))));
-  const pretestAt = new Set();
-  if (cfg.pretestItems>0){ const step=Math.max(4,Math.floor(cfg.maxItems/cfg.pretestItems));
-    for(let i=step; pretestAt.size<cfg.pretestItems && i<cfg.maxItems; i+=step) pretestAt.add(i); }
+  const pretestAt = planPretestAt(cfg);
   const sim = { id:"e"+Date.now().toString(36), examId, cfg, theta:0, answeredCount:0,
     administered:[], // {qid, b, pretest, caseId?}
     counts:{}, caseSlots, caseIds:cases.map(c=>c.id), casesDone:0, pretestDone:0, pretestAt,
@@ -502,7 +518,7 @@ NC.simNext = function(sim){
     for (const s of sibs){ if (seenCount(s.id) < seenCount(pick.id)){ pick = s; break; } }
   }
   const stv = S(); stv.seen[pick.id] = (stv.seen[pick.id]||0)+1;
-  const isPretest = sim.pretestAt.has(answered) && sim.pretestDone < sim.cfg.pretestItems;
+  const isPretest = pretestSlots(sim).includes(answered) && sim.pretestDone < sim.cfg.pretestItems;
   if (isPretest) sim.pretestDone++;
   sim.administered.push({qid:pick.id, b:NC.diffB(pick), pretest:isPretest, scored:!isPretest, cn:pick.cn, t:pick.t});
   NC.save();
