@@ -447,6 +447,7 @@ NC.newSim = function(examId){
 NC.getSim = id => S().sims.find(x=>x.id===id);
 
 NC.simNext = function(sim){
+  sim.cfg = sim.cfg || (NC.EXAMS && NC.EXAMS[sim.examId]) || (NC.EXAMS && NC.EXAMS["nclex-rn-2026"]);
   // returns {kind:'item', item, pretest} | {kind:'case', case} | {kind:'done', reason, outcome}
   if (sim.status!=="open") return {kind:"done", reason:sim.stopReason, outcome:sim.outcome};
   // resume an item already served but not yet answered (e.g. after reload)
@@ -555,6 +556,7 @@ NC.simCaseItemAnswered = function(sim, caseObj, step, ans, timeMs){
   return res;
 };
 NC.simFinish = function(sim, reason, outcome){
+  sim.cfg = sim.cfg || (NC.EXAMS && NC.EXAMS[sim.examId]) || (NC.EXAMS && NC.EXAMS["nclex-rn-2026"]);
   if (reason==="max" || reason==="time"){
     const se = NC.seAbility(sim.theta, sim.administered.filter(x=>x.scored));
     outcome = sim.theta - se*0.9 > sim.cfg.cut ? "above" : (sim.theta + se*0.9 < sim.cfg.cut ? "below" : "border");

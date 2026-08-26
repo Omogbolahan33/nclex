@@ -41,7 +41,8 @@ const POOL_OPTS = {
 const KEY = process.env.PG_STORE_KEY || "state";
 const DOC_CAP = 20000;
 
-let pg = null, pool = null, data = null, timer = null, writeChain = Promise.resolve();
+let pg = null, pool = null, data = null, timer = null;
+let isFlushing = false, pendingFlush = false, waiters = [];
 let watermarkTs = 0, tablesRead = false;
 
 function drv(){
@@ -182,8 +183,11 @@ async function writeTables(client, doc){
                   ON CONFLICT (k) DO UPDATE SET v=$1::jsonb, updated_at=now()`, [J(doc.calibration)]);
   }
   /* legacy backup row: keeps v1 rollback + store_doc_size() meaningful */
+  const backupDoc = { ...doc };
+  delete backupDoc.items;
+  delete backupDoc.cases;
   await upsert(`INSERT INTO store (key, doc, updated_at) VALUES ($1,$2::jsonb,now())
-                ON CONFLICT (key) DO UPDATE SET doc=$2::jsonb, updated_at=now()`, [KEY, J(doc)]);
+                ON CONFLICT (key) DO UPDATE SET doc=$2::jsonb, updated_at=now()`, [KEY, J(backupDoc)]);
 }
 
 /* ── public contract ────────────────────────────────────────────────── */
@@ -239,16 +243,61 @@ function load(){
   });
   return data;
 }
-function save(){ if (timer) return; timer = setTimeout(()=>{ timer=null; flush(); }, 250); }
+
+function snapshot(doc){
+  const src = doc || blank();
+  return {
+    users: src.users ? JSON.parse(JSON.stringify(src.users)) : {},
+    tokens: src.tokens ? JSON.parse(JSON.stringify(src.tokens)) : {},
+    sims: src.sims ? JSON.parse(JSON.stringify(src.sims)) : [],
+    responses: src.responses ? src.responses.slice(-DOC_CAP) : [],
+    seen: src.seen ? { ...src.seen } : {},
+    authoring: src.authoring ? JSON.parse(JSON.stringify(src.authoring)) : {},
+    bankPatches: src.bankPatches ? JSON.parse(JSON.stringify(src.bankPatches)) : {},
+    calibration: src.calibration ? JSON.parse(JSON.stringify(src.calibration)) : undefined
+  };
+}
+
+function save(){
+  if (timer) return;
+  timer = setTimeout(()=>{ timer = null; triggerFlush(); }, 250);
+}
+
 function saveNow(){
-  if (timer){ clearTimeout(timer); timer=null; }
-  flush();
-  return writeChain;
+  if (timer){ clearTimeout(timer); timer = null; }
+  return new Promise((resolve, reject) => {
+    waiters.push({ resolve, reject });
+    triggerFlush();
+  });
 }
-function flush(){
-  const snap = JSON.parse(JSON.stringify(data || blank()));
-  writeChain = writeChain.then(()=>writeDb(snap)).catch(e=>console.error("[store-pg] save failed:", e.message));
+
+function triggerFlush(){
+  if (isFlushing){
+    pendingFlush = true;
+    return;
+  }
+  isFlushing = true;
+  pendingFlush = false;
+  const currentWaiters = waiters;
+  waiters = [];
+
+  const snap = snapshot(data);
+  writeDb(snap)
+    .then(() => {
+      currentWaiters.forEach(w => w.resolve());
+    })
+    .catch(e => {
+      console.error("[store-pg] save failed:", e.message);
+      currentWaiters.forEach(w => w.resolve());
+    })
+    .finally(() => {
+      isFlushing = false;
+      if (pendingFlush || waiters.length > 0){
+        triggerFlush();
+      }
+    });
 }
+
 async function writeDb(snap){
   const client = await getPool().connect();
   try {
@@ -263,4 +312,13 @@ async function writeDb(snap){
 
 module.exports = { load, loadAsync, save, saveNow, FILE: "postgres:"+KEY,
   connected: () => tablesRead,
-  _reset(){ data=null; if(timer){clearTimeout(timer); timer=null;} writeChain=Promise.resolve(); watermarkTs=0; tablesRead=false; } };
+  _reset(){
+    data = null;
+    if (timer){ clearTimeout(timer); timer = null; }
+    isFlushing = false;
+    pendingFlush = false;
+    waiters = [];
+    watermarkTs = 0;
+    tablesRead = false;
+  }
+};
