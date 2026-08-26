@@ -5,7 +5,7 @@
   "description": "RN Ready — mobile-first NCLEX-RN preparation app (engine + zero-dep exam server)",
   "scripts": {
     "build": "node build-standalone.mjs && node build-online.mjs",
-    "start": "node server.js",
+    "start": "node --max-old-space-size=384 server.js",
     "test": "node test/smoke.mjs && node test/dom.mjs && node test/admin.mjs && node test/store.mjs && node test/demo.mjs",
     "test:api": "node test/api.mjs",
     "calibrate": "node calibrate.js",

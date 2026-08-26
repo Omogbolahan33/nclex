@@ -199,6 +199,15 @@ console.log("— Postgres adapter v2 (normalized, in-memory fake pg) —");
   await storePg.saveNow();
   ok(JSON.stringify(db.items)===itemsSnapshot, "flush never rewrites the items table (SQL edits survive)");
   ok(JSON.stringify(db.cases)===casesSnapshot, "flush never rewrites the cases table");
+  ok(!db.store["state"].doc.items && !db.store["state"].doc.cases, "legacy backup row omits items/cases to prevent document bloat");
+
+  /* write coalescing: multiple rapid save calls do not spawn unbounded promises */
+  for (let i=0; i<30; i++){
+    d3.seen["RAPID-"+i] = i;
+    storePg.save();
+  }
+  await storePg.saveNow();
+  ok(db.seen["RAPID-29"] === 29, "coalesced flush writes latest state");
 
   /* empty content tables must not wipe the in-repo baseline */
   db.items = {}; db.cases = {};

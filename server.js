@@ -181,8 +181,9 @@ function json(res, code, obj, req){
 }
 async function body(req){
   return new Promise((resolve)=>{
-    let b=""; req.on("data",c=>{ b+=c; if (b.length>1e6) req.destroy(); });
+    let b=""; req.on("data",c=>{ b+=c; if (b.length>1e6){ req.destroy(); resolve({}); } });
     req.on("end", ()=>{ try{ resolve(JSON.parse(b||"{}")); }catch(e){ resolve({}); } });
+    req.on("error", ()=>resolve({}));
   });
 }
 
@@ -196,6 +197,15 @@ function limited(bucket, key, max, windowMs){
   rec.n++;
   return rec.n > max;
 }
+function sweepBuckets(){
+  const now = Date.now();
+  for (const b of Object.values(buckets)){
+    for (const [k, rec] of Object.entries(b)){
+      if (now > rec.reset + 300000) delete b[k];
+    }
+  }
+}
+setInterval(sweepBuckets, 300000).unref();
 const ip = req => (req.headers["x-forwarded-for"]||req.socket.remoteAddress||"?").split(",")[0].trim();
 
 /* ── auth ── */
