@@ -97,6 +97,15 @@ the database changes what examinees see on the next restart without a
 redeploy. `js/bank*.js` remain the seed source, the `standalone.html` build
 input, and the fallback when the database is empty or unreachable.
 
+**Demo / practice set (env switch).** A second, self-contained 128-question
+packet (107 standalone items + 6 case studies, incl. the bow-tie and trend
+items) lives in `demo/` and is seeded with `npm run db:seed:demo`. Set
+`DEMO_BANK=1` in the Render dashboard to serve that set — and only that set —
+to examinees; unset it (or `0`/`false`) to serve the regular bank again. The
+health endpoint reports the live position: `"demoBank": true|false`. The
+source document contains no answer key; answers + rationales were authored
+for practice use. See DEPLOYMENT.md §4c.
+
 Create the service by hand (**New → Web Service**); no Blueprint required.
 Build `npm ci && node build-online.mjs`, start `npm start`, health
 `/api/health`. Free instances have no persistent disk, so `STORE=pg` against an

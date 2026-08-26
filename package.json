@@ -6,12 +6,13 @@
   "scripts": {
     "build": "node build-standalone.mjs && node build-online.mjs",
     "start": "node server.js",
-    "test": "node test/smoke.mjs && node test/dom.mjs && node test/admin.mjs && node test/store.mjs",
+    "test": "node test/smoke.mjs && node test/dom.mjs && node test/admin.mjs && node test/store.mjs && node test/demo.mjs",
     "test:api": "node test/api.mjs",
     "calibrate": "node calibrate.js",
     "db:migrate": "node scripts/db-migrate.js",
     "lint": "node itemlint.js",
-    "db:seed": "node scripts/db-seed.js"
+    "db:seed": "node scripts/db-seed.js",
+    "db:seed:demo": "node scripts/db-seed-demo.js"
   },
   "dependencies": {
     "pg": "^8.16.3"
