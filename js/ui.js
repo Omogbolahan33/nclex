@@ -65,30 +65,36 @@ NC.route = function(){
   NC.logEvent("view",{page:r});
   const S = NC.load();
   if (!S.user.onboarded && page!=="onboard") return go("#/onboard");
-  switch(page){
-    case "onboard": return onboard();
-    case "home": return home();
-    case "practice": return practiceHub();
-    case "quick": return quickPick();
-    case "custom": return customBuilder();
-    case "browse": return browse(a);
-    case "session": return b==="results"? sessionResults(a) : sessionRunner(a);
-    case "case": return b==="results"? caseResults(a) : caseRunner(a);
-    case "cj": return caseHub();
-    case "simulate": return simHub();
-    case "sim": return a==="preflight"? simPreflight(b) : a==="run"? simRun(b) : simResults(a);
-    case "study": return studyHub();
-    case "plan": return studyPlan();
-    case "incorrect": return reviewList("incorrect");
-    case "bookmarks": return reviewList("bookmarks");
-    case "later": return reviewList("later");
-    case "progress": return progress();
-    case "explain": return explain(a);
-    case "settings": return settings();
-    case "weak": return NC.routeStudyWeak();
-    case "spaced": return spacedView();
-    default: return home();
+  const res = (()=>{
+    switch(page){
+      case "onboard": return onboard();
+      case "home": return home();
+      case "practice": return practiceHub();
+      case "quick": return quickPick();
+      case "custom": return customBuilder();
+      case "browse": return browse(a);
+      case "session": return b==="results"? sessionResults(a) : sessionRunner(a);
+      case "case": return b==="results"? caseResults(a) : caseRunner(a);
+      case "cj": return caseHub();
+      case "simulate": return simHub();
+      case "sim": return a==="preflight"? simPreflight(b) : a==="run"? simRun(b) : simResults(a);
+      case "study": return studyHub();
+      case "plan": return studyPlan();
+      case "incorrect": return reviewList("incorrect");
+      case "bookmarks": return reviewList("bookmarks");
+      case "later": return reviewList("later");
+      case "progress": return progress();
+      case "explain": return explain(a);
+      case "settings": return settings();
+      case "weak": return NC.routeStudyWeak();
+      case "spaced": return spacedView();
+      default: return home();
+    }
+  })();
+  if (page !== "sim" || a !== "run") {
+    checkResumeSimPrompt();
   }
+  return res;
 };
 
 /* ================= ONBOARDING ================= */
@@ -136,6 +142,30 @@ function home(){
   const weak = NC.weakAreas(3,3);
   const streak = S.streak.count>0 ? `Streak ${S.streak.count} 🔥` : "";
   const resume = S.sessions.filter(s=>s.status==="open").slice(-1)[0];
+  const openSim = S.sims.filter(s=>s.status==="open").slice(-1)[0];
+  let simResumeHtml = "";
+  if (openSim) {
+    const exam = (NC.EXAMS && NC.EXAMS[openSim.examId]) || { name: "NCLEX Simulation" };
+    const stoppedWhere = simStoppedWhere(openSim);
+    const leftMs = openSim.remainingMs || Math.max(0, openSim.endsAt - Date.now());
+    simResumeHtml = `
+   <div class="card resume-sim-card" style="border-left:4px solid var(--teal); background:var(--card)">
+     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+       <div style="flex:1">
+         <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+           <span class="ico" style="font-size:18px">◷</span>
+           <b style="font-size:15px">Resume In-Progress Simulation</b>
+         </div>
+         <div class="hint" style="margin-bottom:6px"><b>${esc(exam.name)}</b> · stopped at <b>${esc(stoppedWhere)}</b></div>
+         <div class="hint">${fmt(leftMs)} remaining · Pick up exactly where you stopped</div>
+       </div>
+     </div>
+     <div style="display:flex;gap:8px;margin-top:12px">
+       <button class="btn sm" data-act="sim-resume" data-id="${openSim.id}">Pick up where you stopped →</button>
+       <button class="btn sm soft" data-act="sim-abandon" data-id="${openSim.id}">Abandon</button>
+     </div>
+   </div>`;
+  }
   const taskDone = k=> !!(S.daily.tasks[day]&&S.daily.tasks[day][k]);
   const srsDue = NC.srsCounts().due;
   const tasks = [
@@ -150,6 +180,7 @@ function home(){
    <div class="topbar"><div><h1>${greet}${S.user.name?", "+esc(S.user.name):""}</h1>
      <div class="sub">${dte!=null? (dte>0? `Exam in ${dte} day${dte===1?"":"s"}` : "Exam day is here — good luck") : "No exam date set"}${streak?" · "+streak:""}${NC.notify.cfg().on? " · ⏰ "+esc(NC.notify.cfg().time):""}</div></div>
      <div class="spacer"></div><button class="back" data-act="go" data-to="#/settings" aria-label="Settings">⚙</button></div>
+   ${simResumeHtml}
    ${first? `<div class="card" style="border-left:4px solid var(--teal)"><h3>Start with a 30-item diagnostic</h3>
      <p class="hint">Establishes your baseline and powers your daily plan.</p>
      <button class="btn" data-act="go" data-to="#/session/diag">Take diagnostic →</button></div>`:""}
@@ -666,6 +697,27 @@ function caseResults(cid){
 /* ================= SIMULATION ================= */
 function simHub(){
   const S=NC.load();
+  const openSim = S.sims.filter(s=>s.status==="open").slice(-1)[0];
+  let openSimBanner = "";
+  if (openSim) {
+    const exam = (NC.EXAMS && NC.EXAMS[openSim.examId]) || { name: "NCLEX Simulation" };
+    const stoppedWhere = simStoppedWhere(openSim);
+    const leftMs = openSim.remainingMs || Math.max(0, openSim.endsAt - Date.now());
+    openSimBanner = `
+      <div class="card resume-sim-card" style="border-left:4px solid var(--teal); background:var(--card); margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span class="ico" style="font-size:18px">◷</span>
+          <b style="font-size:15px">Simulation in Progress</b>
+        </div>
+        <p class="hint" style="margin:4px 0 10px">
+          You have an unfinished <b>${esc(exam.name)}</b> simulation stopped at <b>${esc(stoppedWhere)}</b> (${fmt(leftMs)} remaining).
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="btn sm" data-act="sim-resume" data-id="${openSim.id}">Pick up where you stopped →</button>
+          <button class="btn sm soft" data-act="sim-abandon" data-id="${openSim.id}">Abandon</button>
+        </div>
+      </div>`;
+  }
   const sims = S.sims.filter(x=>x.status==="done").slice(-6).reverse().map(x=>{
     const lbl = x.outcome==="above"? ["Above readiness threshold","var(--ok)"]: x.outcome==="below"? ["Below readiness threshold","var(--bad)"]:["Borderline","var(--warn)"];
     return `<button class="rev-row" data-act="go" data-to="#/sim/${x.id}">
@@ -681,6 +733,7 @@ function simHub(){
       <span class="d" style="display:block">${e.minItems===e.maxItems? e.minItems+" items": e.minItems+"–"+e.maxItems+" adaptive items"} · ${e.durationMinutes} min · ${e.caseStudies} case stud${e.caseStudies===1?"y":"ies"} · ${esc(e.version)}</span></span>
       <span class="arr">›</span></button>`).join("");
   screen(`<div class="topbar"><h1>Simulate</h1></div>
+   ${openSimBanner}
    <div class="banner info">Exam rules apply: one item at a time, no going back, no feedback until the end. The exam decides when it ends — <b>you won't see “questions remaining.”</b></div>
    ${cards}
    ${sims? `<div class="card"><h3>Simulation history</h3>${sims}</div>`:""}
@@ -719,6 +772,10 @@ function simPreflight(examId){
   });
 }
 NC.actions["sim-start"] = async (d,elm)=>{
+  const existing = NC.load().sims.find(s=>s.examId===d.exam && s.status==="open");
+  if (existing) {
+    return go("#/sim/run/" + existing.id);
+  }
   let sim;
   if (NC.api && NC.api.remote){
     try{
@@ -726,6 +783,7 @@ NC.actions["sim-start"] = async (d,elm)=>{
       const r = await NC.api.simStart(d.exam);
       sim = { id:r.simId, examId:d.exam, cfg:NC.EXAMS[d.exam], remote:true,
         status:"open", startedTs:Date.now(), endsAt:Date.now()+NC.EXAMS[d.exam].durationMinutes*60000,
+        remainingMs:NC.EXAMS[d.exam].durationMinutes*60000,
         administered:[], counts:{}, theta:0, answeredCount:0, served:0 };
       NC.load().sims.push(sim); NC.save();
     }catch(e){ NC.ui.toast("Could not reach the exam server"); if(elm){elm.disabled=false; elm.textContent="Begin simulation →";} return; }
@@ -740,6 +798,10 @@ let simCtx = null;
 function simRun(simId){
   const sim = NC.getSim(simId); if(!sim) return go("#/simulate");
   if (sim.status!=="open") return simResults(simId);
+  if (sim.remainingMs && Date.now() > sim.endsAt){
+    sim.endsAt = Date.now() + sim.remainingMs;
+    NC.save();
+  }
   simCtx = {sim, ans:null, startTs:Date.now(), pretest:false, n:0};
   if (sim.remote) return serveSimRemote(sim);
   serveSim();
@@ -755,6 +817,11 @@ async function serveSimRemote(sim){
       console.warn("Invalid/empty case study received, skipping to keep progressing:", nxt);
       return serveSimRemote(sim);
     }
+    sim.currentCase = nxt.case.id;
+    sim.caseIdx = nxt.resumeAt || 0;
+    sim.currentQid = null;
+    sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+    NC.save();
     try {
       return renderSimCaseRemote(sim, nxt.case, nxt.resumeAt||0);
     } catch(err) {
@@ -769,6 +836,10 @@ async function serveSimRemote(sim){
     return serveSimRemote(sim);
   }
   NC.markSeen(item.id);
+  sim.currentQid = item.id;
+  sim.currentCase = null;
+  sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+  NC.save();
   simCtx = {sim, item, ans:null, startTs:Date.now(), pretest:!!nxt.pretest, n:nxt.n||1};
   const left = sim.endsAt - Date.now();
   screen(`
@@ -958,6 +1029,11 @@ function serveSim(){
       sim.currentCase = null; sim.casesDone = (sim.casesDone||0)+1; NC.save();
       return serveSim();
     }
+    sim.currentCase = nxt.case.id;
+    sim.caseIdx = nxt.resumeAt || 0;
+    sim.currentQid = null;
+    sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+    NC.save();
     try {
       return renderSimCase(nxt.case, nxt.resumeAt||0);
     } catch(err) {
@@ -972,7 +1048,10 @@ function serveSim(){
     console.warn("Invalid item in serveSim, advancing");
     return serveSim();
   }
-  sim.currentQid = item.id; NC.save();
+  sim.currentQid = item.id;
+  sim.currentCase = null;
+  sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+  NC.save();
   simCtx = {sim, item, ans:null, startTs:Date.now(), pretest:!!nxt.pretest, n:nxt.n||1};
   NC.markSeen(item.id);
   const total = sim.cfg.maxItems;
@@ -1004,6 +1083,7 @@ function startSimClock(sim){
   tick = setInterval(()=>{
     const elx=document.getElementById("tm"); if(!elx) return clearInterval(tick);
     const rem = sim.endsAt-Date.now();
+    sim.remainingMs = Math.max(0, rem);
     elx.textContent = fmt(rem);
     if (rem<15*60000) elx.classList.add("warn");
     if (rem<=0){ clearInterval(tick); NC.simFinish(sim,"time"); NC.ui.toast("Time expired — scoring your exam"); go("#/sim/"+sim.id+"/results"); }
@@ -1082,6 +1162,11 @@ function renderSimCase(c, startAt){
   const reveals=(Array.isArray(it.reveal) ? it.reveal : [])
     .map(k=>(c.exhibits && c.exhibits[k]) || {name:k, type:"text", body:""})
     .filter(Boolean);
+  sim.currentCase = c.id;
+  sim.caseIdx = simCaseCtx.i;
+  sim.currentQid = null;
+  sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+  NC.save();
   const left=sim.endsAt-Date.now();
   screen(`
    <div class="run-head"><div class="r1"><b>Case Study</b><span>item ${sim.administered.filter(x=>x.scored).length+1}</span>
@@ -1116,7 +1201,14 @@ function renderSimCase(c, startAt){
         NC.api.track(NC.trackPayload()).catch(()=>{});
       }
       simCaseCtx.ans=null; simCaseCtx.startTs=Date.now(); simCaseCtx.i++;
-      if (simCaseCtx.i>=c.items.length){ simCaseCtx=null; sim.currentQid=null; NC.save(); return serveSim(); }
+      if (simCaseCtx.i>=c.items.length){
+        simCaseCtx=null; sim.currentCase = null; sim.caseIdx = 0; sim.currentQid=null;
+      } else {
+        sim.currentCase = c.id; sim.caseIdx = simCaseCtx.i;
+      }
+      sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+      NC.save();
+      if (simCaseCtx==null) return serveSim();
       renderSimCase(c, simCaseCtx.i);
     } catch(err) {
       console.error("Error in local sim case progression:", err);
@@ -1421,8 +1513,114 @@ function calcOverlay(){
   });
 }
 
+/* ---------- simulation resume prompt on reopen ---------- */
+let resumePromptDismissedFor = null;
+function simStoppedWhere(sim){
+  if (sim.currentCase) {
+    const c = (NC.CASES && NC.CASES.find(x => x.id === sim.currentCase)) || null;
+    const stepIdx = (sim.caseIdx || 0) + 1;
+    const total = c && c.items ? c.items.length : 6;
+    const title = c ? c.title.split("—")[0].trim() : "Case Study";
+    return `${title} · Question ${stepIdx} of ${total}`;
+  }
+  const answered = sim.remote ? (sim.remoteAnswered || 0) : (sim.administered || []).filter(x => x.scored && x.done).length;
+  const currentNum = (sim.served || answered) + 1;
+  if (sim.currentQid) {
+    const it = NC.item(sim.currentQid);
+    if (it && it.cn && NC.cn(it.cn)) return `Item ${currentNum} (${NC.cn(it.cn).name})`;
+  }
+  return `Item ${currentNum}`;
+}
+
+function promptResumeSimSheet(sim){
+  if (typeof document === "undefined") return;
+  if (document.getElementById("sim-resume-prompt")) return;
+  const exam = (NC.EXAMS && NC.EXAMS[sim.examId]) || { name: "NCLEX Simulation" };
+  const stoppedWhere = simStoppedWhere(sim);
+  const leftMs = sim.remainingMs || Math.max(0, sim.endsAt - Date.now());
+  const bg = h(`
+    <div class="sheet-bg" id="sim-resume-prompt">
+      <div class="sheet" role="dialog" aria-label="Resume Simulation">
+        <button class="x icon-tgl" data-act="close-resume-prompt" aria-label="Close">✕</button>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:22px">◷</span>
+          <h3 style="margin:0;font-size:17px">Resume Your Simulation?</h3>
+        </div>
+        <p style="margin:8px 0 14px;font-size:14px;color:var(--ink-2);line-height:1.45">
+          You have an unfinished <b>${esc(exam.name)}</b> simulation.
+          Pick up exactly where you stopped at <b>${esc(stoppedWhere)}</b> (${fmt(leftMs)} remaining).
+        </p>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <button class="btn" data-act="sim-resume" data-id="${sim.id}">Pick up where I stopped →</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn soft" style="flex:1" data-act="close-resume-prompt">Later</button>
+            <button class="btn soft" style="flex:1" data-act="sim-abandon" data-id="${sim.id}">Abandon Exam</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+  document.body.appendChild(bg);
+  wire(bg);
+  bg.onclick = e => { if (e.target === bg) { resumePromptDismissedFor = sim.id; bg.remove(); } };
+  NC.actions["close-resume-prompt"] = () => {
+    resumePromptDismissedFor = sim.id;
+    bg.remove();
+  };
+}
+
+function checkResumeSimPrompt(){
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  const S = NC.load();
+  const openSim = S && S.sims && S.sims.find(s => s.status === "open");
+  if (!openSim) return;
+  if (location.hash && location.hash.includes("/sim/run/" + openSim.id)) return;
+  if (resumePromptDismissedFor === openSim.id) return;
+  promptResumeSimSheet(openSim);
+}
+
+NC.promptResumeSim = promptResumeSimSheet;
+NC.checkResumeSimPrompt = checkResumeSimPrompt;
+NC.simStoppedWhere = simStoppedWhere;
+
+NC.actions["sim-resume"] = (d) => {
+  const prompt = document.getElementById("sim-resume-prompt");
+  if (prompt) prompt.remove();
+  go("#/sim/run/" + d.id);
+};
+
+NC.actions["sim-abandon"] = (d) => {
+  const sim = NC.getSim(d.id);
+  if (!sim) return;
+  if (!confirm("Are you sure you want to abandon this simulation? It will be scored based on items completed so far.")) return;
+  if (tick) clearInterval(tick);
+  NC.simFinish(sim, "abandon", "below");
+  NC.save();
+  if (NC.api && NC.api.account && NC.api.track) {
+    NC.api.track(NC.trackPayload()).catch(()=>{});
+  }
+  const prompt = document.getElementById("sim-resume-prompt");
+  if (prompt) prompt.remove();
+  NC.ui.toast("Exam abandoned and scored");
+  go("#/sim/" + sim.id + "/results");
+};
+
 /* ---------- resilience net: prevent UI hangs & preserve user progress ---------- */
 if (typeof window !== "undefined") {
+  const saveOpenSimRemaining = () => {
+    try {
+      const S = NC.load();
+      const openSim = S && S.sims && S.sims.find(s => s.status === "open");
+      if (openSim) {
+        openSim.remainingMs = Math.max(0, openSim.endsAt - Date.now());
+        openSim.lastActiveTs = Date.now();
+        NC.save();
+      }
+    } catch(_) {}
+  };
+  window.addEventListener("beforeunload", saveOpenSimRemaining);
+  window.addEventListener("pagehide", saveOpenSimRemaining);
+
   window.addEventListener("unhandledrejection", (ev) => {
     console.error("Unhandled rejection caught by resilience net:", ev.reason);
     try { NC.save(); } catch(_) {}

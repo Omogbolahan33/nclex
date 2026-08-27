@@ -347,5 +347,73 @@ console.log("— remote simulation: short cases, real-time saving & no hang on p
   window.fetch = realFetch;
 }
 
+console.log("— premature simulation close: prompt to pick up exactly where stopped —");
+{
+  // 1. Create an open simulation where the user stopped mid-exam at a specific item
+  const stoppedSim = {
+    id: "sim-premature-" + Date.now(),
+    examId: "nclex-rn-2026",
+    cfg: window.NC.EXAMS["nclex-rn-2026"],
+    remote: false,
+    status: "open",
+    startedTs: Date.now() - 300000,
+    endsAt: Date.now() + 15000000,
+    remainingMs: 15000000,
+    currentCase: "CASE-RESP-01",
+    caseIdx: 2, // stopped at step 3
+    caseSlots: [6, 40, 75],
+    casesDone: 0,
+    administered: [
+      { qid: "CASE-RESP-01-recognize", b: 0, score: 1, answered: true, done: true, scored: true },
+      { qid: "CASE-RESP-01-analyze", b: 0, score: 1, answered: true, done: true, scored: true }
+    ],
+    counts: {},
+    theta: 0.2,
+    answeredCount: 2,
+    served: 2
+  };
+  window.NC.load().sims.push(stoppedSim);
+  window.NC.save();
+
+  // 2. Open app back (navigate to #/home)
+  await nav("#/home");
+  await after(150);
+
+  // Verify prompt sheet appears
+  const promptSheet = window.document.getElementById("sim-resume-prompt");
+  ok(promptSheet != null, "prompt sheet appears on opening app back");
+  ok(/Resume Your Simulation\?/.test(promptSheet.textContent), "prompt sheet title is clear");
+  ok(/Question 3 of 6/.test(promptSheet.textContent), "prompt states exact question where candidate stopped");
+  ok(/Pick up where I stopped/.test(promptSheet.textContent), "prompt offers pick up action");
+
+  // Verify Home screen also has the prominent resume card
+  ok(/Resume In-Progress Simulation/.test(txt()), "home screen shows prominent resume card");
+  ok(/Question 3 of 6/.test(txt()), "home card indicates exact question where stopped");
+
+  // 3. Click the prompt action to resume
+  const resumeBtn = promptSheet.querySelector('[data-act="sim-resume"]');
+  ok(resumeBtn != null, "prompt resume button exists");
+  await click('[data-act="sim-resume"]');
+  await after(100);
+
+  // Verify candidate is right at Question 3 of the case study
+  ok(/Case Study/.test(txt()), "returned to case study");
+  ok(/item 3/i.test(txt()), "resumed exactly at item 3 where user stopped");
+
+  // 4. Test Simulate hub display
+  await nav("#/simulate");
+  await after(100);
+  ok(/Simulation in Progress/.test(txt()), "simulate hub shows in-progress banner");
+  ok(/Question 3 of 6/.test(txt()), "simulate hub banner indicates exact position");
+
+  // 5. Test abandoning the simulation
+  const abandonBtn = q('[data-act="sim-abandon"]')[0];
+  ok(abandonBtn != null, "abandon button available");
+  await click('[data-act="sim-abandon"]');
+  await after(100);
+  ok(stoppedSim.status === "done", "abandon marks sim as done");
+  ok(/Simulation Complete/.test(txt()), "navigates to simulation results upon abandon");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

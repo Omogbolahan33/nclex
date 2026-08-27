@@ -439,7 +439,8 @@ NC.newSim = function(examId){
   const sim = { id:"e"+Date.now().toString(36), examId, cfg, theta:0, answeredCount:0,
     administered:[], // {qid, b, pretest, caseId?}
     counts:{}, caseSlots, caseIds:cases.map(c=>c.id), casesDone:0, pretestDone:0, pretestAt,
-    startedTs:Date.now(), endsAt:Date.now()+cfg.durationMinutes*60000, status:"open", events:[] };
+    startedTs:Date.now(), endsAt:Date.now()+cfg.durationMinutes*60000,
+    remainingMs:cfg.durationMinutes*60000, status:"open", events:[] };
   st.sims.push(sim); NC.save();
   return sim;
 };
@@ -458,6 +459,10 @@ NC.simNext = function(sim){
       return {kind:"item", item:it, pretest: pending? !!pending.pretest:false, n:Math.max(1,n)};
     }
   }
+  if (sim.remainingMs && Date.now() > sim.endsAt){
+    sim.endsAt = Date.now() + sim.remainingMs;
+    NC.save();
+  }
   if (Date.now() > sim.endsAt) return NC.simFinish(sim, "time");
   const answered = sim.administered.filter(x=>x.scored).length;
   if (answered >= sim.cfg.maxItems) return NC.simFinish(sim, "max");
@@ -468,17 +473,17 @@ NC.simNext = function(sim){
     if (sim.theta - 1.645*se > sim.cfg.cut) return NC.simFinish(sim, "confidence-above", "above");
     if (sim.theta + 1.645*se < sim.cfg.cut) return NC.simFinish(sim, "confidence-below", "below");
   }
+  if (sim.currentCase){ // resume mid-case (after reload)
+    return {kind:"case", case:NC.CASES.find(x=>x.id===sim.currentCase), resumeAt:sim.caseIdx||0};
+  }
   // case study due? (insert as a block; each case item counted when answered)
-  const nextSlot = sim.caseSlots[sim.casesDone];
+  const nextSlot = sim.caseSlots ? sim.caseSlots[sim.casesDone] : null;
   if (sim.cfg.caseStudies>0 && nextSlot!=null && answered >= nextSlot && sim.currentCase==null){
     // serve from THIS sim's shuffled selection (legacy sims: round-robin fallback)
-    const cid = sim.caseIds ? sim.caseIds[sim.casesDone] : NC.CASES[sim.casesDone % NC.CASES.length].id;
+    const cid = sim.caseIds ? sim.caseIds[sim.casesDone] : (NC.CASES[sim.casesDone % NC.CASES.length] && NC.CASES[sim.casesDone % NC.CASES.length].id);
     const c = NC.CASES.find(x=>x.id===cid);
     sim.currentCase = c.id; sim.caseIdx = 0; NC.save();
     return {kind:"case", case:c};
-  }
-  if (sim.currentCase){ // resume mid-case (after reload)
-    return {kind:"case", case:NC.CASES.find(x=>x.id===sim.currentCase), resumeAt:sim.caseIdx};
   }
   // blueprint-constrained adaptive selection
   // variant groups: exclude any group already served in THIS exam (one member per exam)
@@ -521,6 +526,7 @@ NC.simNext = function(sim){
   const isPretest = pretestSlots(sim).includes(answered) && sim.pretestDone < sim.cfg.pretestItems;
   if (isPretest) sim.pretestDone++;
   sim.administered.push({qid:pick.id, b:NC.diffB(pick), pretest:isPretest, scored:!isPretest, cn:pick.cn, t:pick.t});
+  sim.currentQid = pick.id;
   NC.save();
   return {kind:"item", item:pick, pretest:isPretest, n:answered+1};
 };
@@ -535,6 +541,7 @@ NC.simAnswer = function(sim, item, ans, timeMs){
     sim.counts[item.cn] = (sim.counts[item.cn]||0)+1;
     sim.theta = simEAP(sim);
   }
+  sim.currentQid = null;
   NC.recordAnswer("sim:"+sim.id, item.id, ans, timeMs, true);
   NC.save();
   return res;
