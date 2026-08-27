@@ -34,10 +34,24 @@ function screen(inner, tab, opts){
 }
 function wire(root){
   root.querySelectorAll("[data-act]").forEach(elm=>{
-    elm.onclick = (e)=>{
+    elm.onclick = async (e)=>{
       const act = elm.dataset.act;
       const A = NC.actions; if (!A[act]) return;
-      A[act](elm.dataset, elm, e);
+      try {
+        const res = A[act](elm.dataset, elm, e);
+        if (res && typeof res.then === "function") {
+          await res;
+        }
+      } catch (err) {
+        console.error("Action error:", act, err);
+        if (elm) {
+          elm.disabled = false;
+          if (elm.textContent === "…" || elm.textContent === "Saving…") {
+            elm.textContent = elm.dataset.actText || "NEXT →";
+          }
+        }
+        try { NC.save(); } catch(_) {}
+      }
     };
   });
 }
@@ -51,30 +65,36 @@ NC.route = function(){
   NC.logEvent("view",{page:r});
   const S = NC.load();
   if (!S.user.onboarded && page!=="onboard") return go("#/onboard");
-  switch(page){
-    case "onboard": return onboard();
-    case "home": return home();
-    case "practice": return practiceHub();
-    case "quick": return quickPick();
-    case "custom": return customBuilder();
-    case "browse": return browse(a);
-    case "session": return b==="results"? sessionResults(a) : sessionRunner(a);
-    case "case": return b==="results"? caseResults(a) : caseRunner(a);
-    case "cj": return caseHub();
-    case "simulate": return simHub();
-    case "sim": return a==="preflight"? simPreflight(b) : a==="run"? simRun(b) : simResults(a);
-    case "study": return studyHub();
-    case "plan": return studyPlan();
-    case "incorrect": return reviewList("incorrect");
-    case "bookmarks": return reviewList("bookmarks");
-    case "later": return reviewList("later");
-    case "progress": return progress();
-    case "explain": return explain(a);
-    case "settings": return settings();
-    case "weak": return NC.routeStudyWeak();
-    case "spaced": return spacedView();
-    default: return home();
+  const res = (()=>{
+    switch(page){
+      case "onboard": return onboard();
+      case "home": return home();
+      case "practice": return practiceHub();
+      case "quick": return quickPick();
+      case "custom": return customBuilder();
+      case "browse": return browse(a);
+      case "session": return b==="results"? sessionResults(a) : sessionRunner(a);
+      case "case": return b==="results"? caseResults(a) : caseRunner(a);
+      case "cj": return caseHub();
+      case "simulate": return simHub();
+      case "sim": return a==="preflight"? simPreflight(b) : a==="run"? simRun(b) : simResults(a);
+      case "study": return studyHub();
+      case "plan": return studyPlan();
+      case "incorrect": return reviewList("incorrect");
+      case "bookmarks": return reviewList("bookmarks");
+      case "later": return reviewList("later");
+      case "progress": return progress();
+      case "explain": return explain(a);
+      case "settings": return settings();
+      case "weak": return NC.routeStudyWeak();
+      case "spaced": return spacedView();
+      default: return home();
+    }
+  })();
+  if (page !== "sim" || a !== "run") {
+    checkResumeSimPrompt();
   }
+  return res;
 };
 
 /* ================= ONBOARDING ================= */
@@ -122,6 +142,30 @@ function home(){
   const weak = NC.weakAreas(3,3);
   const streak = S.streak.count>0 ? `Streak ${S.streak.count} 🔥` : "";
   const resume = S.sessions.filter(s=>s.status==="open").slice(-1)[0];
+  const openSim = S.sims.filter(s=>s.status==="open").slice(-1)[0];
+  let simResumeHtml = "";
+  if (openSim) {
+    const exam = (NC.EXAMS && NC.EXAMS[openSim.examId]) || { name: "NCLEX Simulation" };
+    const stoppedWhere = simStoppedWhere(openSim);
+    const leftMs = openSim.remainingMs || Math.max(0, openSim.endsAt - Date.now());
+    simResumeHtml = `
+   <div class="card resume-sim-card" style="border-left:4px solid var(--teal); background:var(--card)">
+     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+       <div style="flex:1">
+         <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+           <span class="ico" style="font-size:18px">◷</span>
+           <b style="font-size:15px">Resume In-Progress Simulation</b>
+         </div>
+         <div class="hint" style="margin-bottom:6px"><b>${esc(exam.name)}</b> · stopped at <b>${esc(stoppedWhere)}</b></div>
+         <div class="hint">${fmt(leftMs)} remaining · Pick up exactly where you stopped</div>
+       </div>
+     </div>
+     <div style="display:flex;gap:8px;margin-top:12px">
+       <button class="btn sm" data-act="sim-resume" data-id="${openSim.id}">Pick up where you stopped →</button>
+       <button class="btn sm soft" data-act="sim-abandon" data-id="${openSim.id}">Abandon</button>
+     </div>
+   </div>`;
+  }
   const taskDone = k=> !!(S.daily.tasks[day]&&S.daily.tasks[day][k]);
   const srsDue = NC.srsCounts().due;
   const tasks = [
@@ -136,6 +180,7 @@ function home(){
    <div class="topbar"><div><h1>${greet}${S.user.name?", "+esc(S.user.name):""}</h1>
      <div class="sub">${dte!=null? (dte>0? `Exam in ${dte} day${dte===1?"":"s"}` : "Exam day is here — good luck") : "No exam date set"}${streak?" · "+streak:""}${NC.notify.cfg().on? " · ⏰ "+esc(NC.notify.cfg().time):""}</div></div>
      <div class="spacer"></div><button class="back" data-act="go" data-to="#/settings" aria-label="Settings">⚙</button></div>
+   ${simResumeHtml}
    ${first? `<div class="card" style="border-left:4px solid var(--teal)"><h3>Start with a 30-item diagnostic</h3>
      <p class="hint">Establishes your baseline and powers your daily plan.</p>
      <button class="btn" data-act="go" data-to="#/session/diag">Take diagnostic →</button></div>`:""}
@@ -325,13 +370,16 @@ NC.actions["next"] = async (d,elm)=>{
   const timeMs = Date.now()-cur.startTs;
   if (cur.ans==null && !confirm("Skip without answering? The item will be scored incorrect.")) return;
   const btn = elm || document.querySelector('[data-act="next"]');
-  if (btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  if (btn){ btn.disabled=true; btn.dataset.actText = btn.textContent; btn.textContent="Saving…"; }
   try{
     if (NC.api && NC.api.remote){
       const res = await NC.api.submitAnswer(s.id, item.id, cur.ans, timeMs, s.timed);
       NC.applyScore(s.id, item.id, cur.ans, res, timeMs, s.timed);
     } else {
       NC.recordAnswer(s.id, item.id, cur.ans, timeMs, s.timed);
+    }
+    if (NC.api && NC.api.account && NC.api.track) {
+      NC.api.track(NC.trackPayload()).catch(()=>{});
     }
   }catch(e){
     if (e.status == null && NC.api.queueAnswer({sid:s.id, qid:item.id, ans:cur.ans, timeMs, timed:s.timed})){
@@ -346,7 +394,16 @@ NC.actions["next"] = async (d,elm)=>{
   }
   s.idx++;
   if (s.idx >= s.items.length) return finishSession(s);
-  NC.save(); renderSessionItem(s);
+  NC.save();
+  try {
+    renderSessionItem(s);
+  } catch(err) {
+    console.error("Error rendering session item:", err);
+    s.idx++;
+    if (s.idx >= s.items.length) return finishSession(s);
+    NC.save();
+    renderSessionItem(s);
+  }
 };
 NC.actions["bmk"] = (d,elm)=>{ const S=NC.load(); S.bookmarks.includes(d.qid)? S.bookmarks=S.bookmarks.filter(x=>x!==d.qid):S.bookmarks.push(d.qid); NC.save(); elm.classList.toggle("on"); NC.ui.toast(S.bookmarks.includes(d.qid)?"Bookmarked":"Removed"); };
 NC.actions["later"] = (d,elm)=>{ const S=NC.load(); S.reviewLater.includes(d.qid)? S.reviewLater=S.reviewLater.filter(x=>x!==d.qid):S.reviewLater.push(d.qid); NC.save(); elm.classList.toggle("on"); };
@@ -535,35 +592,56 @@ function caseRunner(cid){
   renderItemInCase(c);
 }
 function renderItemInCase(c){
+  if (!c || !c.items || !c.items.length || caseCtx.i >= c.items.length) {
+    caseCtx = caseCtx || {}; caseCtx.finished = true;
+    return caseResults(c ? c.id : (caseCtx && caseCtx.id));
+  }
   const it = c.items[caseCtx.i];
+  if (!it) {
+    caseCtx.finished = true;
+    return caseResults(c.id);
+  }
   const S = NC.load();
-  const reveals = it.reveal.map(k=>c.exhibits[k]);
+  const reveals = (Array.isArray(it.reveal) ? it.reveal : [])
+    .map(k => (c.exhibits && c.exhibits[k]) || { name: k, type: "text", body: "" })
+    .filter(Boolean);
+  const total = c.items.length;
   screen(`
    <div class="run-head">
-     <div class="r1"><b>${esc(c.title.split("—")[0])}</b><span>Case Study · item ${caseCtx.i+1} of 6</span><span class="spacer"></span>
+     <div class="r1"><b>${esc(c.title.split("—")[0])}</b><span>Case Study · item ${caseCtx.i+1} of ${total}</span><span class="spacer"></span>
        <button class="iconbtn" data-act="bmk" data-qid="${c.id}-${it.step}" aria-label="Bookmark">☆</button></div>
-     <div class="progress-hairline"><i style="width:${100*caseCtx.i/6}%"></i></div>
+     <div class="progress-hairline"><i style="width:${100*caseCtx.i/total}%"></i></div>
    </div>
-   <div><span class="chip">${esc(NC.TAX.cjNames[it.step])}</span><span class="chip gray">${esc(c.setting)}</span></div>
+   <div><span class="chip">${esc(NC.TAX.cjNames[it.step] || it.step)}</span><span class="chip gray">${esc(c.setting)}</span></div>
    <div class="exhibit-bar">${reveals.map((e,i)=>`<button data-act="exh" data-i="${i}">${esc(e.name)} ▾</button>`).join("")}</div>
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="case-next">NEXT →</button><button class="icon-tgl" data-act="calc" aria-label="Calculator">🖩</button></div></div>`, "#/practice", {noTab:true});
   const mount = document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(it, false));
-  const state = { get ans(){return caseCtx.ans;}, set(v){caseCtx.ans=v;} };
-  NC.render.refresh = ()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it, state, {})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(it, false));
+    const state = { get ans(){return caseCtx.ans;}, set(v){caseCtx.ans=v;} };
+    NC.render.refresh = ()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it, state, {})); wire(mount); };
+    NC.render.refresh();
+  } catch(err) {
+    console.error("Error rendering standalone case item:", err);
+    caseCtx.i++;
+    if (caseCtx.i >= c.items.length) { caseCtx.finished = true; return caseResults(c.id); }
+    return renderItemInCase(c);
+  }
   NC.actions["exh"] = (d,elm)=>exhibitSheet(reveals[+d.i]);
   NC.actions["case-next"] = async (d,elm)=>{
     if (caseCtx.ans==null && !confirm("Skip without answering?")) return;
     const timeMs = Date.now()-caseCtx.startTs;
-    if (elm){ elm.disabled=true; elm.textContent="Saving…"; }
+    if (elm){ elm.disabled=true; elm.dataset.actText = elm.textContent; elm.textContent="Saving…"; }
     try{
       if (NC.api && NC.api.remote){
         const res = await NC.api.submitAnswer("case:"+c.id, c.id+"-"+it.step, caseCtx.ans, timeMs, false);
         NC.applyScore("case:"+c.id+":"+Date.now(), c.id+"-"+it.step, caseCtx.ans, res, timeMs, false);
       } else {
         NC.recordAnswer("case:"+c.id+":"+Date.now(), c.id+"-"+it.step, caseCtx.ans, timeMs, false);
+      }
+      if (NC.api && NC.api.account && NC.api.track) {
+        NC.api.track(NC.trackPayload()).catch(()=>{});
       }
     }catch(e){
       if (e.status == null && NC.api.queueAnswer({sid:"case:"+c.id, qid:c.id+"-"+it.step, ans:caseCtx.ans, timeMs, timed:false})){
@@ -576,8 +654,14 @@ function renderItemInCase(c){
       }
     }
     caseCtx.i++; caseCtx.ans=null; caseCtx.startTs=Date.now();
-    if (caseCtx.i>=6){ caseCtx.finished=true; NC.logEvent("case_done",{case:c.id}); return caseResults(c.id); }
-    renderItemInCase(c);
+    if (caseCtx.i>=c.items.length){ caseCtx.finished=true; NC.logEvent("case_done",{case:c.id}); return caseResults(c.id); }
+    try {
+      renderItemInCase(c);
+    } catch(err) {
+      console.error("Error advancing standalone case:", err);
+      caseCtx.finished = true;
+      return caseResults(c.id);
+    }
   };
 }
 function exhibitSheet(exh){
@@ -595,15 +679,16 @@ function caseResults(cid){
     const score = r? r.score:null;
     const cls = score==null? "part": score===1?"ok": score>0?"part":"bad";
     return `<div class="cj-step-row"><span class="dot ${cls}">${score==null?"–": score===1?"✓": Math.round(score*100)+"%"}</span>
-      <span style="flex:1"><b>${esc(NC.TAX.cjNames[it.step])}</b><br><span class="hint">${i+1}. ${esc(it.stem.slice(0,70))}…</span></span>
+      <span style="flex:1"><b>${esc(NC.TAX.cjNames[it.step] || it.step)}</b><br><span class="hint">${i+1}. ${esc(it.stem.slice(0,70))}…</span></span>
       <button class="btn sm soft" data-act="go" data-to="#/explain/${encodeURIComponent(c.id+"-"+it.step)}">Why</button></div>`;
   }).join("");
   const rs = c.items.map(it=>S.responses.filter(x=>x.qid===c.id+"-"+it.step).slice(-1)[0]).filter(Boolean);
   const pctv = rs.length? Math.round(100*rs.reduce((a,r)=>a+r.score,0)/rs.length):0;
+  const stepLabel = c.items.length === 6 ? "Six-step walkthrough" : `${c.items.length}-step walkthrough`;
   screen(`<div class="topbar"><button class="back" data-act="go" data-to="#/cj" aria-label="Back">‹</button><h1>Case Debrief</h1></div>
    <div class="card score-hero"><div class="big" style="color:${pctv>=75?"var(--ok)":pctv>=50?"var(--warn)":"var(--bad)"}">${pctv}%</div>
     <div class="sub">${esc(c.title)} · clinical judgment performance</div></div>
-   <div class="card"><h3>Six-step walkthrough</h3>${rows}</div>
+   <div class="card"><h3>${stepLabel}</h3>${rows}</div>
    <div class="card"><h3>How the case unfolded</h3><p style="font-size:13.5px">${esc(c.summary)}</p>
     <p class="hint">Read each “Why” above — the debrief is where clinical judgment is actually built.</p></div>
    <div class="card"><button class="btn soft" data-act="go" data-to="#/cj">Choose another case</button></div>`, "#/practice");
@@ -612,6 +697,27 @@ function caseResults(cid){
 /* ================= SIMULATION ================= */
 function simHub(){
   const S=NC.load();
+  const openSim = S.sims.filter(s=>s.status==="open").slice(-1)[0];
+  let openSimBanner = "";
+  if (openSim) {
+    const exam = (NC.EXAMS && NC.EXAMS[openSim.examId]) || { name: "NCLEX Simulation" };
+    const stoppedWhere = simStoppedWhere(openSim);
+    const leftMs = openSim.remainingMs || Math.max(0, openSim.endsAt - Date.now());
+    openSimBanner = `
+      <div class="card resume-sim-card" style="border-left:4px solid var(--teal); background:var(--card); margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span class="ico" style="font-size:18px">◷</span>
+          <b style="font-size:15px">Simulation in Progress</b>
+        </div>
+        <p class="hint" style="margin:4px 0 10px">
+          You have an unfinished <b>${esc(exam.name)}</b> simulation stopped at <b>${esc(stoppedWhere)}</b> (${fmt(leftMs)} remaining).
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="btn sm" data-act="sim-resume" data-id="${openSim.id}">Pick up where you stopped →</button>
+          <button class="btn sm soft" data-act="sim-abandon" data-id="${openSim.id}">Abandon</button>
+        </div>
+      </div>`;
+  }
   const sims = S.sims.filter(x=>x.status==="done").slice(-6).reverse().map(x=>{
     const lbl = x.outcome==="above"? ["Above readiness threshold","var(--ok)"]: x.outcome==="below"? ["Below readiness threshold","var(--bad)"]:["Borderline","var(--warn)"];
     return `<button class="rev-row" data-act="go" data-to="#/sim/${x.id}">
@@ -627,6 +733,7 @@ function simHub(){
       <span class="d" style="display:block">${e.minItems===e.maxItems? e.minItems+" items": e.minItems+"–"+e.maxItems+" adaptive items"} · ${e.durationMinutes} min · ${e.caseStudies} case stud${e.caseStudies===1?"y":"ies"} · ${esc(e.version)}</span></span>
       <span class="arr">›</span></button>`).join("");
   screen(`<div class="topbar"><h1>Simulate</h1></div>
+   ${openSimBanner}
    <div class="banner info">Exam rules apply: one item at a time, no going back, no feedback until the end. The exam decides when it ends — <b>you won't see “questions remaining.”</b></div>
    ${cards}
    ${sims? `<div class="card"><h3>Simulation history</h3>${sims}</div>`:""}
@@ -665,6 +772,10 @@ function simPreflight(examId){
   });
 }
 NC.actions["sim-start"] = async (d,elm)=>{
+  const existing = NC.load().sims.find(s=>s.examId===d.exam && s.status==="open");
+  if (existing) {
+    return go("#/sim/run/" + existing.id);
+  }
   let sim;
   if (NC.api && NC.api.remote){
     try{
@@ -672,6 +783,7 @@ NC.actions["sim-start"] = async (d,elm)=>{
       const r = await NC.api.simStart(d.exam);
       sim = { id:r.simId, examId:d.exam, cfg:NC.EXAMS[d.exam], remote:true,
         status:"open", startedTs:Date.now(), endsAt:Date.now()+NC.EXAMS[d.exam].durationMinutes*60000,
+        remainingMs:NC.EXAMS[d.exam].durationMinutes*60000,
         administered:[], counts:{}, theta:0, answeredCount:0, served:0 };
       NC.load().sims.push(sim); NC.save();
     }catch(e){ NC.ui.toast("Could not reach the exam server"); if(elm){elm.disabled=false; elm.textContent="Begin simulation →";} return; }
@@ -686,6 +798,10 @@ let simCtx = null;
 function simRun(simId){
   const sim = NC.getSim(simId); if(!sim) return go("#/simulate");
   if (sim.status!=="open") return simResults(simId);
+  if (sim.remainingMs && Date.now() > sim.endsAt){
+    sim.endsAt = Date.now() + sim.remainingMs;
+    NC.save();
+  }
   simCtx = {sim, ans:null, startTs:Date.now(), pretest:false, n:0};
   if (sim.remote) return serveSimRemote(sim);
   serveSim();
@@ -696,9 +812,34 @@ async function serveSimRemote(sim){
   try{ nxt = await NC.api.simNext(sim.id); }
   catch(e){ NC.ui.toast("Connection problem — retrying…"); setTimeout(()=>{ if(NC.route && location.hash.includes(sim.id)) serveSimRemote(sim); },1500); return; }
   if (nxt.kind==="done") return finishRemoteSim(sim, nxt);
-  if (nxt.kind==="case") return renderSimCaseRemote(sim, nxt.case, nxt.resumeAt||0);
-  const item = NC.item(nxt.item.id) || nxt.item;
+  if (nxt.kind==="case"){
+    if (!nxt.case || !Array.isArray(nxt.case.items) || !nxt.case.items.length) {
+      console.warn("Invalid/empty case study received, skipping to keep progressing:", nxt);
+      return serveSimRemote(sim);
+    }
+    sim.currentCase = nxt.case.id;
+    sim.caseIdx = nxt.resumeAt || 0;
+    sim.currentQid = null;
+    sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+    NC.save();
+    try {
+      return renderSimCaseRemote(sim, nxt.case, nxt.resumeAt||0);
+    } catch(err) {
+      console.error("Error in renderSimCaseRemote, progressing simulation:", err);
+      NC.ui.toast("Case study error — advancing exam…");
+      return serveSimRemote(sim);
+    }
+  }
+  const item = NC.item(nxt.item && nxt.item.id) || (nxt && nxt.item);
+  if (!item) {
+    console.warn("Invalid/empty item in serveSimRemote, advancing:", nxt);
+    return serveSimRemote(sim);
+  }
   NC.markSeen(item.id);
+  sim.currentQid = item.id;
+  sim.currentCase = null;
+  sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+  NC.save();
   simCtx = {sim, item, ans:null, startTs:Date.now(), pretest:!!nxt.pretest, n:nxt.n||1};
   const left = sim.endsAt - Date.now();
   screen(`
@@ -712,17 +853,35 @@ async function serveSimRemote(sim){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(item, false));
-  const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(item, false));
+    const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Error rendering item stem/body:", renderErr);
+    NC.ui.toast("Item display issue — advancing…");
+    return serveSimRemote(sim);
+  }
   startSimClock(sim);
 }
 async function finishRemoteSim(sim, done){
   clearInterval(tick);
   let r;
-  try{ r = await NC.api.simResult(sim.id); }
-  catch(e){ NC.ui.toast("Could not load results — retry"); return; }
+  try{
+    r = await NC.api.simResult(sim.id);
+  } catch(e){
+    console.warn("Could not fetch remote sim result, falling back to local progress:", e);
+    r = {
+      outcome: (done && done.outcome) || "borderline",
+      stopReason: (done && done.stopReason) || "done",
+      theta: sim.theta || 0,
+      answeredCount: sim.remoteAnswered || (sim.administered||[]).filter(x=>x.scored).length,
+      counts: sim.counts || {},
+      administered: sim.administered || [],
+      finishedTs: Date.now()
+    };
+  }
   const S = NC.load();
   (r.administered||[]).forEach(a=>{
     if (a.scored && a.answered){
@@ -733,14 +892,44 @@ async function finishRemoteSim(sim, done){
     answeredCount:r.answeredCount, counts:r.counts||{}, administered:r.administered||[],
     finishedTs:r.finishedTs||Date.now() });
   NC.save();
+  if (NC.api && NC.api.account && NC.api.track) {
+    NC.api.track(NC.trackPayload()).catch(()=>{});
+  }
   NC.logEvent("sim_done",{exam:sim.examId, outcome:r.outcome, items:r.answeredCount});
   go("#/sim/"+sim.id+"/results");
 }
 let simCaseCtxR = null;
 function renderSimCaseRemote(sim, c, startAt){
-  if (!simCaseCtxR || simCaseCtxR.cid!==c.id) simCaseCtxR={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  if (!c || !c.items || !c.items.length) {
+    simCaseCtxR = null;
+    sim.currentCase = null;
+    sim.caseIdx = 0;
+    NC.save();
+    return serveSimRemote(sim);
+  }
+  if (!simCaseCtxR || simCaseCtxR.cid!==c.id) {
+    simCaseCtxR={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  } else if (startAt != null && simCaseCtxR.i !== startAt) {
+    simCaseCtxR.i = startAt;
+  }
+  if (simCaseCtxR.i >= c.items.length) {
+    simCaseCtxR = null;
+    sim.currentCase = null;
+    sim.caseIdx = 0;
+    NC.save();
+    return serveSimRemote(sim);
+  }
   const it=c.items[simCaseCtxR.i];
-  const reveals=it.reveal.map(k=>c.exhibits[k]);
+  if (!it) {
+    simCaseCtxR = null;
+    sim.currentCase = null;
+    sim.caseIdx = 0;
+    NC.save();
+    return serveSimRemote(sim);
+  }
+  const reveals=(Array.isArray(it.reveal) ? it.reveal : [])
+    .map(k=>(c.exhibits && c.exhibits[k]) || {name:k, type:"text", body:""})
+    .filter(Boolean);
   const left=sim.endsAt-Date.now();
   screen(`
    <div class="run-head"><div class="r1"><b>Case Study</b><span>item ${(sim.served||0)+1}</span>
@@ -752,20 +941,82 @@ function renderSimCaseRemote(sim, c, startAt){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-case-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(it,false));
-  const state={ get ans(){return simCaseCtxR.ans;}, set(v){simCaseCtxR.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(it,false));
+    const state={ get ans(){return simCaseCtxR.ans;}, set(v){simCaseCtxR.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Failed to render case item stem/item:", renderErr);
+    NC.ui.toast("Item render issue — progressing…");
+    simCaseCtxR.i++;
+    if (simCaseCtxR.i >= c.items.length) {
+      simCaseCtxR = null;
+      sim.currentCase = null;
+      sim.caseIdx = 0;
+      NC.save();
+      return serveSimRemote(sim);
+    }
+    return renderSimCaseRemote(sim, c, simCaseCtxR.i);
+  }
   NC.actions["exh"]=(d)=>exhibitSheet(reveals[+d.i]);
   NC.actions["sim-case-next"]=async (d,elm)=>{
     if (simCaseCtxR.ans==null && !confirm("You must answer to continue. (No answer = scored incorrect.)")) return;
-    if(elm){elm.disabled=true; elm.textContent="…";}
-    try{ await NC.api.simCaseAnswer(sim.id, c.id, it.step, simCaseCtxR.ans, Date.now()-simCaseCtxR.startTs); }
+    if(elm){elm.disabled=true; elm.dataset.actText = elm.textContent; elm.textContent="…";}
+    const timeMs = Date.now()-simCaseCtxR.startTs;
+    const currentAns = simCaseCtxR.ans;
+    const step = it.step;
+    const qid = c.id+"-"+step;
+    try{ await NC.api.simCaseAnswer(sim.id, c.id, step, currentAns, timeMs); }
     catch(e){ NC.ui.toast("Connection problem — retry"); if(elm){elm.disabled=false; elm.textContent="NEXT →";} return; }
-    sim.served=(sim.served||0)+1; NC.save();
+
+    // Save progress in real time
+    sim.served=(sim.served||0)+1;
+    sim.remoteAnswered=(sim.remoteAnswered||0)+1;
+    sim.administered = sim.administered || [];
+    const itemB = (it && typeof it.b === "number") ? it.b : (typeof c.b === "number") ? c.b : (NC.diffB ? NC.diffB(it) : 0);
+    sim.administered.push({
+      qid,
+      b: itemB,
+      pretest: false,
+      scored: true,
+      cn: c.cn,
+      t: it.t,
+      ans: currentAns,
+      answered: currentAns != null,
+      timeMs,
+      done: true,
+      caseId: c.id
+    });
+    NC.applyScore("sim:"+sim.id, qid, currentAns, {score:0, answered:currentAns!=null}, timeMs, true);
+
     simCaseCtxR.ans=null; simCaseCtxR.startTs=Date.now(); simCaseCtxR.i++;
-    if (simCaseCtxR.i>=6){ simCaseCtxR=null; return serveSimRemote(sim); }
-    renderSimCaseRemote(sim, c, simCaseCtxR.i);
+
+    if (simCaseCtxR.i >= c.items.length){
+      sim.currentCase = null;
+      sim.caseIdx = 0;
+    } else {
+      sim.currentCase = c.id;
+      sim.caseIdx = simCaseCtxR.i;
+    }
+    NC.save();
+
+    if (NC.api && NC.api.account && NC.api.track) {
+      NC.api.track(NC.trackPayload()).catch(()=>{});
+    }
+
+    try {
+      if (simCaseCtxR.i>=c.items.length){ simCaseCtxR=null; return serveSimRemote(sim); }
+      renderSimCaseRemote(sim, c, simCaseCtxR.i);
+    } catch(err) {
+      console.error("Error advancing case item, progressing simulation:", err);
+      simCaseCtxR = null;
+      sim.currentCase = null;
+      sim.caseIdx = 0;
+      NC.save();
+      if (elm) { elm.disabled = false; elm.textContent = "NEXT →"; }
+      return serveSimRemote(sim);
+    }
   };
   startSimClock(sim);
 }
@@ -773,11 +1024,35 @@ function serveSim(){
   const sim = simCtx.sim;
   const nxt = NC.simNext(sim);
   if (nxt.kind==="done"){ return simResults(sim.id); }
-  if (nxt.kind==="case"){ return renderSimCase(nxt.case, nxt.resumeAt||0); }
+  if (nxt.kind==="case"){
+    if (!nxt.case || !Array.isArray(nxt.case.items) || !nxt.case.items.length) {
+      sim.currentCase = null; sim.casesDone = (sim.casesDone||0)+1; NC.save();
+      return serveSim();
+    }
+    sim.currentCase = nxt.case.id;
+    sim.caseIdx = nxt.resumeAt || 0;
+    sim.currentQid = null;
+    sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+    NC.save();
+    try {
+      return renderSimCase(nxt.case, nxt.resumeAt||0);
+    } catch(err) {
+      console.error("Error in renderSimCase, progressing:", err);
+      sim.currentCase = null; sim.casesDone = (sim.casesDone||0)+1; NC.save();
+      return serveSim();
+    }
+  }
   // item
   const item = nxt.item;
-  sim.currentQid = item.id; NC.save();
-  simCtx.item = item; simCtx.ans=null; simCtx.startTs=Date.now(); simCtx.pretest=!!nxt.pretest; simCtx.n = nxt.n || 1;
+  if (!item) {
+    console.warn("Invalid item in serveSim, advancing");
+    return serveSim();
+  }
+  sim.currentQid = item.id;
+  sim.currentCase = null;
+  sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+  NC.save();
+  simCtx = {sim, item, ans:null, startTs:Date.now(), pretest:!!nxt.pretest, n:nxt.n||1};
   NC.markSeen(item.id);
   const total = sim.cfg.maxItems;
   const left = sim.endsAt - Date.now();
@@ -792,10 +1067,15 @@ function serveSim(){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(item, false));
-  const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(item, false));
+    const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Failed to render item in serveSim, advancing:", renderErr);
+    return serveSim();
+  }
   startSimClock(sim);
 }
 function startSimClock(sim){
@@ -803,6 +1083,7 @@ function startSimClock(sim){
   tick = setInterval(()=>{
     const elx=document.getElementById("tm"); if(!elx) return clearInterval(tick);
     const rem = sim.endsAt-Date.now();
+    sim.remainingMs = Math.max(0, rem);
     elx.textContent = fmt(rem);
     if (rem<15*60000) elx.classList.add("warn");
     if (rem<=0){ clearInterval(tick); NC.simFinish(sim,"time"); NC.ui.toast("Time expired — scoring your exam"); go("#/sim/"+sim.id+"/results"); }
@@ -817,23 +1098,75 @@ NC.actions["sim-next"] = async (d,elm)=>{
   if (answeredCount<2 && !confirm("Once you advance, you cannot return to this item. Continue?")) return;
   const timeMs=Date.now()-simCtx.startTs;
   if (sim.remote){
-    if(elm){elm.disabled=true; elm.textContent="…";}
+    if(elm){elm.disabled=true; elm.dataset.actText = elm.textContent; elm.textContent="…";}
     try{ await NC.api.simAnswer(sim.id, item.id, simCtx.ans, timeMs); }
     catch(e){ NC.ui.toast("Connection problem — retry"); if(elm){elm.disabled=false; elm.textContent="NEXT →";} return; }
-    sim.remoteAnswered=(sim.remoteAnswered||0)+1; sim.served=(sim.served||0)+1; NC.save();
-    return serveSimRemote(sim);
+    sim.remoteAnswered=(sim.remoteAnswered||0)+1;
+    sim.served=(sim.served||0)+1;
+    sim.administered = sim.administered || [];
+    sim.administered.push({
+      qid: item.id,
+      b: NC.diffB(item),
+      pretest: !!simCtx.pretest,
+      scored: !simCtx.pretest,
+      cn: item.cn,
+      t: item.t,
+      ans: simCtx.ans,
+      answered: simCtx.ans != null,
+      timeMs,
+      done: true
+    });
+    NC.applyScore("sim:"+sim.id, item.id, simCtx.ans, {score:0, answered:simCtx.ans!=null}, timeMs, true);
+    sim.currentQid=null;
+    NC.save();
+    if (NC.api && NC.api.account && NC.api.track) {
+      NC.api.track(NC.trackPayload()).catch(()=>{});
+    }
+    try {
+      return serveSimRemote(sim);
+    } catch(err) {
+      console.error("Error serving next remote sim item:", err);
+      if (elm){ elm.disabled = false; elm.textContent = "NEXT →"; }
+      return serveSimRemote(sim);
+    }
   }
   NC.simAnswer(sim, item, simCtx.ans, timeMs);
   sim.currentQid=null; NC.save();
+  if (NC.api && NC.api.account && NC.api.track) {
+    NC.api.track(NC.trackPayload()).catch(()=>{});
+  }
   serveSim();
 };
 /* case inside simulation */
 let simCaseCtx=null;
 function renderSimCase(c, startAt){
   const sim=simCtx.sim;
-  if (!simCaseCtx || simCaseCtx.cid!==c.id) simCaseCtx={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  if (!c || !c.items || !c.items.length){
+    simCaseCtx = null; sim.currentCase = null; sim.casesDone = (sim.casesDone||0)+1; NC.save();
+    return serveSim();
+  }
+  if (!simCaseCtx || simCaseCtx.cid!==c.id) {
+    simCaseCtx={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  } else if (startAt != null && simCaseCtx.i !== startAt) {
+    simCaseCtx.i = startAt;
+  }
+  if (simCaseCtx.i >= c.items.length){
+    simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+    return serveSim();
+  }
   const it=c.items[simCaseCtx.i];
-  const reveals=it.reveal.map(k=>c.exhibits[k]);
+  if (!it){
+    simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+    return serveSim();
+  }
+  const reveals=(Array.isArray(it.reveal) ? it.reveal : [])
+    .map(k=>(c.exhibits && c.exhibits[k]) || {name:k, type:"text", body:""})
+    .filter(Boolean);
+  sim.currentCase = c.id;
+  sim.caseIdx = simCaseCtx.i;
+  sim.currentQid = null;
+  sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+  NC.save();
   const left=sim.endsAt-Date.now();
   screen(`
    <div class="run-head"><div class="r1"><b>Case Study</b><span>item ${sim.administered.filter(x=>x.scored).length+1}</span>
@@ -845,17 +1178,43 @@ function renderSimCase(c, startAt){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-case-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(it,false));
-  const state={ get ans(){return simCaseCtx.ans;}, set(v){simCaseCtx.v=v; simCaseCtx.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(it,false));
+    const state={ get ans(){return simCaseCtx.ans;}, set(v){simCaseCtx.v=v; simCaseCtx.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Failed to render local case item:", renderErr);
+    simCaseCtx.i++;
+    if (simCaseCtx.i >= c.items.length){
+      simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+      return serveSim();
+    }
+    return renderSimCase(c, simCaseCtx.i);
+  }
   NC.actions["exh"]=(d)=>exhibitSheet(reveals[+d.i]);
   NC.actions["sim-case-next"]=()=>{
     if (simCaseCtx.ans==null && !confirm("You must answer to continue. (No answer = scored incorrect.)")) return;
-    NC.simCaseItemAnswered(sim, c, it.step, simCaseCtx.ans, Date.now()-simCaseCtx.startTs);
-    simCaseCtx.ans=null; simCaseCtx.startTs=Date.now(); simCaseCtx.i++;
-    if (simCaseCtx.i>=6){ simCaseCtx=null; sim.currentQid=null; NC.save(); return serveSim(); }
-    renderSimCase(c, simCaseCtx.i);
+    try {
+      NC.simCaseItemAnswered(sim, c, it.step, simCaseCtx.ans, Date.now()-simCaseCtx.startTs);
+      if (NC.api && NC.api.account && NC.api.track) {
+        NC.api.track(NC.trackPayload()).catch(()=>{});
+      }
+      simCaseCtx.ans=null; simCaseCtx.startTs=Date.now(); simCaseCtx.i++;
+      if (simCaseCtx.i>=c.items.length){
+        simCaseCtx=null; sim.currentCase = null; sim.caseIdx = 0; sim.currentQid=null;
+      } else {
+        sim.currentCase = c.id; sim.caseIdx = simCaseCtx.i;
+      }
+      sim.remainingMs = Math.max(0, sim.endsAt - Date.now());
+      NC.save();
+      if (simCaseCtx==null) return serveSim();
+      renderSimCase(c, simCaseCtx.i);
+    } catch(err) {
+      console.error("Error in local sim case progression:", err);
+      simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+      return serveSim();
+    }
   };
   startSimClock(sim);
 }
@@ -1151,6 +1510,140 @@ function calcOverlay(){
     else if(["+","−","×","÷"].includes(k)){ if(op&&prev!=null&&!fresh){ curv=String(apply(parseFloat(prev),parseFloat(curv),op)); } prev=curv; op=k; fresh=true; }
     else if(k==="="){ if(op&&prev!=null){ curv=String(apply(parseFloat(prev),parseFloat(curv),op)); op=null; prev=null; fresh=true; } }
     disp.textContent = (curv.length>12? parseFloat(curv).toPrecision(8).replace(/\.?0+$/,"") : curv) || "0";
+  });
+}
+
+/* ---------- simulation resume prompt on reopen ---------- */
+let resumePromptDismissedFor = null;
+function simStoppedWhere(sim){
+  if (sim.currentCase) {
+    const c = (NC.CASES && NC.CASES.find(x => x.id === sim.currentCase)) || null;
+    const stepIdx = (sim.caseIdx || 0) + 1;
+    const total = c && c.items ? c.items.length : 6;
+    const title = c ? c.title.split("—")[0].trim() : "Case Study";
+    return `${title} · Question ${stepIdx} of ${total}`;
+  }
+  const answered = sim.remote ? (sim.remoteAnswered || 0) : (sim.administered || []).filter(x => x.scored && x.done).length;
+  const currentNum = (sim.served || answered) + 1;
+  if (sim.currentQid) {
+    const it = NC.item(sim.currentQid);
+    if (it && it.cn && NC.cn(it.cn)) return `Item ${currentNum} (${NC.cn(it.cn).name})`;
+  }
+  return `Item ${currentNum}`;
+}
+
+function promptResumeSimSheet(sim){
+  if (typeof document === "undefined") return;
+  if (document.getElementById("sim-resume-prompt")) return;
+  const exam = (NC.EXAMS && NC.EXAMS[sim.examId]) || { name: "NCLEX Simulation" };
+  const stoppedWhere = simStoppedWhere(sim);
+  const leftMs = sim.remainingMs || Math.max(0, sim.endsAt - Date.now());
+  const bg = h(`
+    <div class="sheet-bg" id="sim-resume-prompt">
+      <div class="sheet" role="dialog" aria-label="Resume Simulation">
+        <button class="x icon-tgl" data-act="close-resume-prompt" aria-label="Close">✕</button>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:22px">◷</span>
+          <h3 style="margin:0;font-size:17px">Resume Your Simulation?</h3>
+        </div>
+        <p style="margin:8px 0 14px;font-size:14px;color:var(--ink-2);line-height:1.45">
+          You have an unfinished <b>${esc(exam.name)}</b> simulation.
+          Pick up exactly where you stopped at <b>${esc(stoppedWhere)}</b> (${fmt(leftMs)} remaining).
+        </p>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <button class="btn" data-act="sim-resume" data-id="${sim.id}">Pick up where I stopped →</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn soft" style="flex:1" data-act="close-resume-prompt">Later</button>
+            <button class="btn soft" style="flex:1" data-act="sim-abandon" data-id="${sim.id}">Abandon Exam</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+  document.body.appendChild(bg);
+  wire(bg);
+  bg.onclick = e => { if (e.target === bg) { resumePromptDismissedFor = sim.id; bg.remove(); } };
+  NC.actions["close-resume-prompt"] = () => {
+    resumePromptDismissedFor = sim.id;
+    bg.remove();
+  };
+}
+
+function checkResumeSimPrompt(){
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  const S = NC.load();
+  const openSim = S && S.sims && S.sims.find(s => s.status === "open");
+  if (!openSim) return;
+  if (location.hash && location.hash.includes("/sim/run/" + openSim.id)) return;
+  if (resumePromptDismissedFor === openSim.id) return;
+  promptResumeSimSheet(openSim);
+}
+
+NC.promptResumeSim = promptResumeSimSheet;
+NC.checkResumeSimPrompt = checkResumeSimPrompt;
+NC.simStoppedWhere = simStoppedWhere;
+
+NC.actions["sim-resume"] = (d) => {
+  const prompt = document.getElementById("sim-resume-prompt");
+  if (prompt) prompt.remove();
+  go("#/sim/run/" + d.id);
+};
+
+NC.actions["sim-abandon"] = (d) => {
+  const sim = NC.getSim(d.id);
+  if (!sim) return;
+  if (!confirm("Are you sure you want to abandon this simulation? It will be scored based on items completed so far.")) return;
+  if (tick) clearInterval(tick);
+  NC.simFinish(sim, "abandon", "below");
+  NC.save();
+  if (NC.api && NC.api.account && NC.api.track) {
+    NC.api.track(NC.trackPayload()).catch(()=>{});
+  }
+  const prompt = document.getElementById("sim-resume-prompt");
+  if (prompt) prompt.remove();
+  NC.ui.toast("Exam abandoned and scored");
+  go("#/sim/" + sim.id + "/results");
+};
+
+/* ---------- resilience net: prevent UI hangs & preserve user progress ---------- */
+if (typeof window !== "undefined") {
+  const saveOpenSimRemaining = () => {
+    try {
+      const S = NC.load();
+      const openSim = S && S.sims && S.sims.find(s => s.status === "open");
+      if (openSim) {
+        openSim.remainingMs = Math.max(0, openSim.endsAt - Date.now());
+        openSim.lastActiveTs = Date.now();
+        NC.save();
+      }
+    } catch(_) {}
+  };
+  window.addEventListener("beforeunload", saveOpenSimRemaining);
+  window.addEventListener("pagehide", saveOpenSimRemaining);
+
+  window.addEventListener("unhandledrejection", (ev) => {
+    console.error("Unhandled rejection caught by resilience net:", ev.reason);
+    try { NC.save(); } catch(_) {}
+    try {
+      document.querySelectorAll("button:disabled").forEach(b => {
+        if (b.textContent === "…" || b.textContent === "Saving…") {
+          b.disabled = false;
+          b.textContent = b.dataset.actText || "NEXT →";
+        }
+      });
+    } catch(_) {}
+  });
+  window.addEventListener("error", (ev) => {
+    console.error("Uncaught runtime error caught by resilience net:", ev.error || ev.message);
+    try { NC.save(); } catch(_) {}
+    try {
+      document.querySelectorAll("button:disabled").forEach(b => {
+        if (b.textContent === "…" || b.textContent === "Saving…") {
+          b.disabled = false;
+          b.textContent = b.dataset.actText || "NEXT →";
+        }
+      });
+    } catch(_) {}
   });
 }
 })();

@@ -105,7 +105,11 @@ NC.api = {
 
   /* simulation (server-side CAT) */
   simStart(examId){ return this.post("/api/sim/start", {examId}); },
-  simNext(simId){ return this.post("/api/sim/next", {simId}); },
+  simNext(simId){
+    const sim = typeof NC !== "undefined" && NC.getSim && NC.getSim(simId);
+    const remainingMs = sim ? (sim.remainingMs || Math.max(0, sim.endsAt - Date.now())) : null;
+    return this.post("/api/sim/next", {simId, remainingMs});
+  },
   simAnswer(simId, qid, ans, timeMs){ return this.post("/api/sim/answer", {simId, qid, ans, timeMs}); },
   simCaseAnswer(simId, caseId, step, ans, timeMs){ return this.post("/api/sim/case-answer", {simId, caseId, step, ans, timeMs}); },
   simResult(simId){ return this.post("/api/sim/result", {simId}); }
