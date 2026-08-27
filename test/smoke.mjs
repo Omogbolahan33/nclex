@@ -183,7 +183,7 @@ while(true){
   if (guard++>300) { ok(false,"sim infinite loop"); break; }
   if (nxt.kind==="item"){ NC.simAnswer(sim, nxt.item, correctAnsFor(nxt.item), 20000); }
   else { servedCase = true;
-    for (let i=0;i<6;i++){ const it=nxt.case.items[i]; NC.simCaseItemAnswered(sim, nxt.case, it.step, correctAnsFor(it), 30000); } }
+    for (const it of nxt.case.items){ NC.simCaseItemAnswered(sim, nxt.case, it.step, correctAnsFor(it), 30000); } }
 }
 const scoredCount = sim.administered.filter(x=>x.scored).length;
 ok(sim.status==="done", "sim finished");

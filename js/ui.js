@@ -34,10 +34,24 @@ function screen(inner, tab, opts){
 }
 function wire(root){
   root.querySelectorAll("[data-act]").forEach(elm=>{
-    elm.onclick = (e)=>{
+    elm.onclick = async (e)=>{
       const act = elm.dataset.act;
       const A = NC.actions; if (!A[act]) return;
-      A[act](elm.dataset, elm, e);
+      try {
+        const res = A[act](elm.dataset, elm, e);
+        if (res && typeof res.then === "function") {
+          await res;
+        }
+      } catch (err) {
+        console.error("Action error:", act, err);
+        if (elm) {
+          elm.disabled = false;
+          if (elm.textContent === "…" || elm.textContent === "Saving…") {
+            elm.textContent = elm.dataset.actText || "NEXT →";
+          }
+        }
+        try { NC.save(); } catch(_) {}
+      }
     };
   });
 }
@@ -325,13 +339,16 @@ NC.actions["next"] = async (d,elm)=>{
   const timeMs = Date.now()-cur.startTs;
   if (cur.ans==null && !confirm("Skip without answering? The item will be scored incorrect.")) return;
   const btn = elm || document.querySelector('[data-act="next"]');
-  if (btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  if (btn){ btn.disabled=true; btn.dataset.actText = btn.textContent; btn.textContent="Saving…"; }
   try{
     if (NC.api && NC.api.remote){
       const res = await NC.api.submitAnswer(s.id, item.id, cur.ans, timeMs, s.timed);
       NC.applyScore(s.id, item.id, cur.ans, res, timeMs, s.timed);
     } else {
       NC.recordAnswer(s.id, item.id, cur.ans, timeMs, s.timed);
+    }
+    if (NC.api && NC.api.account && NC.api.track) {
+      NC.api.track(NC.trackPayload()).catch(()=>{});
     }
   }catch(e){
     if (e.status == null && NC.api.queueAnswer({sid:s.id, qid:item.id, ans:cur.ans, timeMs, timed:s.timed})){
@@ -346,7 +363,16 @@ NC.actions["next"] = async (d,elm)=>{
   }
   s.idx++;
   if (s.idx >= s.items.length) return finishSession(s);
-  NC.save(); renderSessionItem(s);
+  NC.save();
+  try {
+    renderSessionItem(s);
+  } catch(err) {
+    console.error("Error rendering session item:", err);
+    s.idx++;
+    if (s.idx >= s.items.length) return finishSession(s);
+    NC.save();
+    renderSessionItem(s);
+  }
 };
 NC.actions["bmk"] = (d,elm)=>{ const S=NC.load(); S.bookmarks.includes(d.qid)? S.bookmarks=S.bookmarks.filter(x=>x!==d.qid):S.bookmarks.push(d.qid); NC.save(); elm.classList.toggle("on"); NC.ui.toast(S.bookmarks.includes(d.qid)?"Bookmarked":"Removed"); };
 NC.actions["later"] = (d,elm)=>{ const S=NC.load(); S.reviewLater.includes(d.qid)? S.reviewLater=S.reviewLater.filter(x=>x!==d.qid):S.reviewLater.push(d.qid); NC.save(); elm.classList.toggle("on"); };
@@ -535,35 +561,56 @@ function caseRunner(cid){
   renderItemInCase(c);
 }
 function renderItemInCase(c){
+  if (!c || !c.items || !c.items.length || caseCtx.i >= c.items.length) {
+    caseCtx = caseCtx || {}; caseCtx.finished = true;
+    return caseResults(c ? c.id : (caseCtx && caseCtx.id));
+  }
   const it = c.items[caseCtx.i];
+  if (!it) {
+    caseCtx.finished = true;
+    return caseResults(c.id);
+  }
   const S = NC.load();
-  const reveals = it.reveal.map(k=>c.exhibits[k]);
+  const reveals = (Array.isArray(it.reveal) ? it.reveal : [])
+    .map(k => (c.exhibits && c.exhibits[k]) || { name: k, type: "text", body: "" })
+    .filter(Boolean);
+  const total = c.items.length;
   screen(`
    <div class="run-head">
-     <div class="r1"><b>${esc(c.title.split("—")[0])}</b><span>Case Study · item ${caseCtx.i+1} of 6</span><span class="spacer"></span>
+     <div class="r1"><b>${esc(c.title.split("—")[0])}</b><span>Case Study · item ${caseCtx.i+1} of ${total}</span><span class="spacer"></span>
        <button class="iconbtn" data-act="bmk" data-qid="${c.id}-${it.step}" aria-label="Bookmark">☆</button></div>
-     <div class="progress-hairline"><i style="width:${100*caseCtx.i/6}%"></i></div>
+     <div class="progress-hairline"><i style="width:${100*caseCtx.i/total}%"></i></div>
    </div>
-   <div><span class="chip">${esc(NC.TAX.cjNames[it.step])}</span><span class="chip gray">${esc(c.setting)}</span></div>
+   <div><span class="chip">${esc(NC.TAX.cjNames[it.step] || it.step)}</span><span class="chip gray">${esc(c.setting)}</span></div>
    <div class="exhibit-bar">${reveals.map((e,i)=>`<button data-act="exh" data-i="${i}">${esc(e.name)} ▾</button>`).join("")}</div>
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="case-next">NEXT →</button><button class="icon-tgl" data-act="calc" aria-label="Calculator">🖩</button></div></div>`, "#/practice", {noTab:true});
   const mount = document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(it, false));
-  const state = { get ans(){return caseCtx.ans;}, set(v){caseCtx.ans=v;} };
-  NC.render.refresh = ()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it, state, {})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(it, false));
+    const state = { get ans(){return caseCtx.ans;}, set(v){caseCtx.ans=v;} };
+    NC.render.refresh = ()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it, state, {})); wire(mount); };
+    NC.render.refresh();
+  } catch(err) {
+    console.error("Error rendering standalone case item:", err);
+    caseCtx.i++;
+    if (caseCtx.i >= c.items.length) { caseCtx.finished = true; return caseResults(c.id); }
+    return renderItemInCase(c);
+  }
   NC.actions["exh"] = (d,elm)=>exhibitSheet(reveals[+d.i]);
   NC.actions["case-next"] = async (d,elm)=>{
     if (caseCtx.ans==null && !confirm("Skip without answering?")) return;
     const timeMs = Date.now()-caseCtx.startTs;
-    if (elm){ elm.disabled=true; elm.textContent="Saving…"; }
+    if (elm){ elm.disabled=true; elm.dataset.actText = elm.textContent; elm.textContent="Saving…"; }
     try{
       if (NC.api && NC.api.remote){
         const res = await NC.api.submitAnswer("case:"+c.id, c.id+"-"+it.step, caseCtx.ans, timeMs, false);
         NC.applyScore("case:"+c.id+":"+Date.now(), c.id+"-"+it.step, caseCtx.ans, res, timeMs, false);
       } else {
         NC.recordAnswer("case:"+c.id+":"+Date.now(), c.id+"-"+it.step, caseCtx.ans, timeMs, false);
+      }
+      if (NC.api && NC.api.account && NC.api.track) {
+        NC.api.track(NC.trackPayload()).catch(()=>{});
       }
     }catch(e){
       if (e.status == null && NC.api.queueAnswer({sid:"case:"+c.id, qid:c.id+"-"+it.step, ans:caseCtx.ans, timeMs, timed:false})){
@@ -576,8 +623,14 @@ function renderItemInCase(c){
       }
     }
     caseCtx.i++; caseCtx.ans=null; caseCtx.startTs=Date.now();
-    if (caseCtx.i>=6){ caseCtx.finished=true; NC.logEvent("case_done",{case:c.id}); return caseResults(c.id); }
-    renderItemInCase(c);
+    if (caseCtx.i>=c.items.length){ caseCtx.finished=true; NC.logEvent("case_done",{case:c.id}); return caseResults(c.id); }
+    try {
+      renderItemInCase(c);
+    } catch(err) {
+      console.error("Error advancing standalone case:", err);
+      caseCtx.finished = true;
+      return caseResults(c.id);
+    }
   };
 }
 function exhibitSheet(exh){
@@ -595,15 +648,16 @@ function caseResults(cid){
     const score = r? r.score:null;
     const cls = score==null? "part": score===1?"ok": score>0?"part":"bad";
     return `<div class="cj-step-row"><span class="dot ${cls}">${score==null?"–": score===1?"✓": Math.round(score*100)+"%"}</span>
-      <span style="flex:1"><b>${esc(NC.TAX.cjNames[it.step])}</b><br><span class="hint">${i+1}. ${esc(it.stem.slice(0,70))}…</span></span>
+      <span style="flex:1"><b>${esc(NC.TAX.cjNames[it.step] || it.step)}</b><br><span class="hint">${i+1}. ${esc(it.stem.slice(0,70))}…</span></span>
       <button class="btn sm soft" data-act="go" data-to="#/explain/${encodeURIComponent(c.id+"-"+it.step)}">Why</button></div>`;
   }).join("");
   const rs = c.items.map(it=>S.responses.filter(x=>x.qid===c.id+"-"+it.step).slice(-1)[0]).filter(Boolean);
   const pctv = rs.length? Math.round(100*rs.reduce((a,r)=>a+r.score,0)/rs.length):0;
+  const stepLabel = c.items.length === 6 ? "Six-step walkthrough" : `${c.items.length}-step walkthrough`;
   screen(`<div class="topbar"><button class="back" data-act="go" data-to="#/cj" aria-label="Back">‹</button><h1>Case Debrief</h1></div>
    <div class="card score-hero"><div class="big" style="color:${pctv>=75?"var(--ok)":pctv>=50?"var(--warn)":"var(--bad)"}">${pctv}%</div>
     <div class="sub">${esc(c.title)} · clinical judgment performance</div></div>
-   <div class="card"><h3>Six-step walkthrough</h3>${rows}</div>
+   <div class="card"><h3>${stepLabel}</h3>${rows}</div>
    <div class="card"><h3>How the case unfolded</h3><p style="font-size:13.5px">${esc(c.summary)}</p>
     <p class="hint">Read each “Why” above — the debrief is where clinical judgment is actually built.</p></div>
    <div class="card"><button class="btn soft" data-act="go" data-to="#/cj">Choose another case</button></div>`, "#/practice");
@@ -696,8 +750,24 @@ async function serveSimRemote(sim){
   try{ nxt = await NC.api.simNext(sim.id); }
   catch(e){ NC.ui.toast("Connection problem — retrying…"); setTimeout(()=>{ if(NC.route && location.hash.includes(sim.id)) serveSimRemote(sim); },1500); return; }
   if (nxt.kind==="done") return finishRemoteSim(sim, nxt);
-  if (nxt.kind==="case") return renderSimCaseRemote(sim, nxt.case, nxt.resumeAt||0);
-  const item = NC.item(nxt.item.id) || nxt.item;
+  if (nxt.kind==="case"){
+    if (!nxt.case || !Array.isArray(nxt.case.items) || !nxt.case.items.length) {
+      console.warn("Invalid/empty case study received, skipping to keep progressing:", nxt);
+      return serveSimRemote(sim);
+    }
+    try {
+      return renderSimCaseRemote(sim, nxt.case, nxt.resumeAt||0);
+    } catch(err) {
+      console.error("Error in renderSimCaseRemote, progressing simulation:", err);
+      NC.ui.toast("Case study error — advancing exam…");
+      return serveSimRemote(sim);
+    }
+  }
+  const item = NC.item(nxt.item && nxt.item.id) || (nxt && nxt.item);
+  if (!item) {
+    console.warn("Invalid/empty item in serveSimRemote, advancing:", nxt);
+    return serveSimRemote(sim);
+  }
   NC.markSeen(item.id);
   simCtx = {sim, item, ans:null, startTs:Date.now(), pretest:!!nxt.pretest, n:nxt.n||1};
   const left = sim.endsAt - Date.now();
@@ -712,17 +782,35 @@ async function serveSimRemote(sim){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(item, false));
-  const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(item, false));
+    const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Error rendering item stem/body:", renderErr);
+    NC.ui.toast("Item display issue — advancing…");
+    return serveSimRemote(sim);
+  }
   startSimClock(sim);
 }
 async function finishRemoteSim(sim, done){
   clearInterval(tick);
   let r;
-  try{ r = await NC.api.simResult(sim.id); }
-  catch(e){ NC.ui.toast("Could not load results — retry"); return; }
+  try{
+    r = await NC.api.simResult(sim.id);
+  } catch(e){
+    console.warn("Could not fetch remote sim result, falling back to local progress:", e);
+    r = {
+      outcome: (done && done.outcome) || "borderline",
+      stopReason: (done && done.stopReason) || "done",
+      theta: sim.theta || 0,
+      answeredCount: sim.remoteAnswered || (sim.administered||[]).filter(x=>x.scored).length,
+      counts: sim.counts || {},
+      administered: sim.administered || [],
+      finishedTs: Date.now()
+    };
+  }
   const S = NC.load();
   (r.administered||[]).forEach(a=>{
     if (a.scored && a.answered){
@@ -733,14 +821,44 @@ async function finishRemoteSim(sim, done){
     answeredCount:r.answeredCount, counts:r.counts||{}, administered:r.administered||[],
     finishedTs:r.finishedTs||Date.now() });
   NC.save();
+  if (NC.api && NC.api.account && NC.api.track) {
+    NC.api.track(NC.trackPayload()).catch(()=>{});
+  }
   NC.logEvent("sim_done",{exam:sim.examId, outcome:r.outcome, items:r.answeredCount});
   go("#/sim/"+sim.id+"/results");
 }
 let simCaseCtxR = null;
 function renderSimCaseRemote(sim, c, startAt){
-  if (!simCaseCtxR || simCaseCtxR.cid!==c.id) simCaseCtxR={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  if (!c || !c.items || !c.items.length) {
+    simCaseCtxR = null;
+    sim.currentCase = null;
+    sim.caseIdx = 0;
+    NC.save();
+    return serveSimRemote(sim);
+  }
+  if (!simCaseCtxR || simCaseCtxR.cid!==c.id) {
+    simCaseCtxR={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  } else if (startAt != null && simCaseCtxR.i !== startAt) {
+    simCaseCtxR.i = startAt;
+  }
+  if (simCaseCtxR.i >= c.items.length) {
+    simCaseCtxR = null;
+    sim.currentCase = null;
+    sim.caseIdx = 0;
+    NC.save();
+    return serveSimRemote(sim);
+  }
   const it=c.items[simCaseCtxR.i];
-  const reveals=it.reveal.map(k=>c.exhibits[k]);
+  if (!it) {
+    simCaseCtxR = null;
+    sim.currentCase = null;
+    sim.caseIdx = 0;
+    NC.save();
+    return serveSimRemote(sim);
+  }
+  const reveals=(Array.isArray(it.reveal) ? it.reveal : [])
+    .map(k=>(c.exhibits && c.exhibits[k]) || {name:k, type:"text", body:""})
+    .filter(Boolean);
   const left=sim.endsAt-Date.now();
   screen(`
    <div class="run-head"><div class="r1"><b>Case Study</b><span>item ${(sim.served||0)+1}</span>
@@ -752,20 +870,82 @@ function renderSimCaseRemote(sim, c, startAt){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-case-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(it,false));
-  const state={ get ans(){return simCaseCtxR.ans;}, set(v){simCaseCtxR.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(it,false));
+    const state={ get ans(){return simCaseCtxR.ans;}, set(v){simCaseCtxR.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Failed to render case item stem/item:", renderErr);
+    NC.ui.toast("Item render issue — progressing…");
+    simCaseCtxR.i++;
+    if (simCaseCtxR.i >= c.items.length) {
+      simCaseCtxR = null;
+      sim.currentCase = null;
+      sim.caseIdx = 0;
+      NC.save();
+      return serveSimRemote(sim);
+    }
+    return renderSimCaseRemote(sim, c, simCaseCtxR.i);
+  }
   NC.actions["exh"]=(d)=>exhibitSheet(reveals[+d.i]);
   NC.actions["sim-case-next"]=async (d,elm)=>{
     if (simCaseCtxR.ans==null && !confirm("You must answer to continue. (No answer = scored incorrect.)")) return;
-    if(elm){elm.disabled=true; elm.textContent="…";}
-    try{ await NC.api.simCaseAnswer(sim.id, c.id, it.step, simCaseCtxR.ans, Date.now()-simCaseCtxR.startTs); }
+    if(elm){elm.disabled=true; elm.dataset.actText = elm.textContent; elm.textContent="…";}
+    const timeMs = Date.now()-simCaseCtxR.startTs;
+    const currentAns = simCaseCtxR.ans;
+    const step = it.step;
+    const qid = c.id+"-"+step;
+    try{ await NC.api.simCaseAnswer(sim.id, c.id, step, currentAns, timeMs); }
     catch(e){ NC.ui.toast("Connection problem — retry"); if(elm){elm.disabled=false; elm.textContent="NEXT →";} return; }
-    sim.served=(sim.served||0)+1; NC.save();
+
+    // Save progress in real time
+    sim.served=(sim.served||0)+1;
+    sim.remoteAnswered=(sim.remoteAnswered||0)+1;
+    sim.administered = sim.administered || [];
+    const itemB = (it && typeof it.b === "number") ? it.b : (typeof c.b === "number") ? c.b : (NC.diffB ? NC.diffB(it) : 0);
+    sim.administered.push({
+      qid,
+      b: itemB,
+      pretest: false,
+      scored: true,
+      cn: c.cn,
+      t: it.t,
+      ans: currentAns,
+      answered: currentAns != null,
+      timeMs,
+      done: true,
+      caseId: c.id
+    });
+    NC.applyScore("sim:"+sim.id, qid, currentAns, {score:0, answered:currentAns!=null}, timeMs, true);
+
     simCaseCtxR.ans=null; simCaseCtxR.startTs=Date.now(); simCaseCtxR.i++;
-    if (simCaseCtxR.i>=6){ simCaseCtxR=null; return serveSimRemote(sim); }
-    renderSimCaseRemote(sim, c, simCaseCtxR.i);
+
+    if (simCaseCtxR.i >= c.items.length){
+      sim.currentCase = null;
+      sim.caseIdx = 0;
+    } else {
+      sim.currentCase = c.id;
+      sim.caseIdx = simCaseCtxR.i;
+    }
+    NC.save();
+
+    if (NC.api && NC.api.account && NC.api.track) {
+      NC.api.track(NC.trackPayload()).catch(()=>{});
+    }
+
+    try {
+      if (simCaseCtxR.i>=c.items.length){ simCaseCtxR=null; return serveSimRemote(sim); }
+      renderSimCaseRemote(sim, c, simCaseCtxR.i);
+    } catch(err) {
+      console.error("Error advancing case item, progressing simulation:", err);
+      simCaseCtxR = null;
+      sim.currentCase = null;
+      sim.caseIdx = 0;
+      NC.save();
+      if (elm) { elm.disabled = false; elm.textContent = "NEXT →"; }
+      return serveSimRemote(sim);
+    }
   };
   startSimClock(sim);
 }
@@ -773,11 +953,27 @@ function serveSim(){
   const sim = simCtx.sim;
   const nxt = NC.simNext(sim);
   if (nxt.kind==="done"){ return simResults(sim.id); }
-  if (nxt.kind==="case"){ return renderSimCase(nxt.case, nxt.resumeAt||0); }
+  if (nxt.kind==="case"){
+    if (!nxt.case || !Array.isArray(nxt.case.items) || !nxt.case.items.length) {
+      sim.currentCase = null; sim.casesDone = (sim.casesDone||0)+1; NC.save();
+      return serveSim();
+    }
+    try {
+      return renderSimCase(nxt.case, nxt.resumeAt||0);
+    } catch(err) {
+      console.error("Error in renderSimCase, progressing:", err);
+      sim.currentCase = null; sim.casesDone = (sim.casesDone||0)+1; NC.save();
+      return serveSim();
+    }
+  }
   // item
   const item = nxt.item;
+  if (!item) {
+    console.warn("Invalid item in serveSim, advancing");
+    return serveSim();
+  }
   sim.currentQid = item.id; NC.save();
-  simCtx.item = item; simCtx.ans=null; simCtx.startTs=Date.now(); simCtx.pretest=!!nxt.pretest; simCtx.n = nxt.n || 1;
+  simCtx = {sim, item, ans:null, startTs:Date.now(), pretest:!!nxt.pretest, n:nxt.n||1};
   NC.markSeen(item.id);
   const total = sim.cfg.maxItems;
   const left = sim.endsAt - Date.now();
@@ -792,10 +988,15 @@ function serveSim(){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(item, false));
-  const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(item, false));
+    const state={ get ans(){return simCtx.ans;}, set(v){simCtx.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(item,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Failed to render item in serveSim, advancing:", renderErr);
+    return serveSim();
+  }
   startSimClock(sim);
 }
 function startSimClock(sim){
@@ -817,23 +1018,70 @@ NC.actions["sim-next"] = async (d,elm)=>{
   if (answeredCount<2 && !confirm("Once you advance, you cannot return to this item. Continue?")) return;
   const timeMs=Date.now()-simCtx.startTs;
   if (sim.remote){
-    if(elm){elm.disabled=true; elm.textContent="…";}
+    if(elm){elm.disabled=true; elm.dataset.actText = elm.textContent; elm.textContent="…";}
     try{ await NC.api.simAnswer(sim.id, item.id, simCtx.ans, timeMs); }
     catch(e){ NC.ui.toast("Connection problem — retry"); if(elm){elm.disabled=false; elm.textContent="NEXT →";} return; }
-    sim.remoteAnswered=(sim.remoteAnswered||0)+1; sim.served=(sim.served||0)+1; NC.save();
-    return serveSimRemote(sim);
+    sim.remoteAnswered=(sim.remoteAnswered||0)+1;
+    sim.served=(sim.served||0)+1;
+    sim.administered = sim.administered || [];
+    sim.administered.push({
+      qid: item.id,
+      b: NC.diffB(item),
+      pretest: !!simCtx.pretest,
+      scored: !simCtx.pretest,
+      cn: item.cn,
+      t: item.t,
+      ans: simCtx.ans,
+      answered: simCtx.ans != null,
+      timeMs,
+      done: true
+    });
+    NC.applyScore("sim:"+sim.id, item.id, simCtx.ans, {score:0, answered:simCtx.ans!=null}, timeMs, true);
+    sim.currentQid=null;
+    NC.save();
+    if (NC.api && NC.api.account && NC.api.track) {
+      NC.api.track(NC.trackPayload()).catch(()=>{});
+    }
+    try {
+      return serveSimRemote(sim);
+    } catch(err) {
+      console.error("Error serving next remote sim item:", err);
+      if (elm){ elm.disabled = false; elm.textContent = "NEXT →"; }
+      return serveSimRemote(sim);
+    }
   }
   NC.simAnswer(sim, item, simCtx.ans, timeMs);
   sim.currentQid=null; NC.save();
+  if (NC.api && NC.api.account && NC.api.track) {
+    NC.api.track(NC.trackPayload()).catch(()=>{});
+  }
   serveSim();
 };
 /* case inside simulation */
 let simCaseCtx=null;
 function renderSimCase(c, startAt){
   const sim=simCtx.sim;
-  if (!simCaseCtx || simCaseCtx.cid!==c.id) simCaseCtx={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  if (!c || !c.items || !c.items.length){
+    simCaseCtx = null; sim.currentCase = null; sim.casesDone = (sim.casesDone||0)+1; NC.save();
+    return serveSim();
+  }
+  if (!simCaseCtx || simCaseCtx.cid!==c.id) {
+    simCaseCtx={cid:c.id, i:startAt||0, ans:null, startTs:Date.now()};
+  } else if (startAt != null && simCaseCtx.i !== startAt) {
+    simCaseCtx.i = startAt;
+  }
+  if (simCaseCtx.i >= c.items.length){
+    simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+    return serveSim();
+  }
   const it=c.items[simCaseCtx.i];
-  const reveals=it.reveal.map(k=>c.exhibits[k]);
+  if (!it){
+    simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+    return serveSim();
+  }
+  const reveals=(Array.isArray(it.reveal) ? it.reveal : [])
+    .map(k=>(c.exhibits && c.exhibits[k]) || {name:k, type:"text", body:""})
+    .filter(Boolean);
   const left=sim.endsAt-Date.now();
   screen(`
    <div class="run-head"><div class="r1"><b>Case Study</b><span>item ${sim.administered.filter(x=>x.scored).length+1}</span>
@@ -845,17 +1093,36 @@ function renderSimCase(c, startAt){
    <div id="qmount"></div>
    <div class="actionbar"><div class="inner"><button class="btn" data-act="sim-case-next">NEXT →</button></div></div>`, "#/simulate", {noTab:true});
   const mount=document.getElementById("qmount");
-  mount.appendChild(NC.renderStem(it,false));
-  const state={ get ans(){return simCaseCtx.ans;}, set(v){simCaseCtx.v=v; simCaseCtx.ans=v;} };
-  NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
-  NC.render.refresh();
+  try {
+    mount.appendChild(NC.renderStem(it,false));
+    const state={ get ans(){return simCaseCtx.ans;}, set(v){simCaseCtx.v=v; simCaseCtx.ans=v;} };
+    NC.render.refresh=()=>{ mount.querySelectorAll(".qbox").forEach(x=>x.remove()); mount.appendChild(NC.renderItem(it,state,{})); wire(mount); };
+    NC.render.refresh();
+  } catch(renderErr) {
+    console.error("Failed to render local case item:", renderErr);
+    simCaseCtx.i++;
+    if (simCaseCtx.i >= c.items.length){
+      simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+      return serveSim();
+    }
+    return renderSimCase(c, simCaseCtx.i);
+  }
   NC.actions["exh"]=(d)=>exhibitSheet(reveals[+d.i]);
   NC.actions["sim-case-next"]=()=>{
     if (simCaseCtx.ans==null && !confirm("You must answer to continue. (No answer = scored incorrect.)")) return;
-    NC.simCaseItemAnswered(sim, c, it.step, simCaseCtx.ans, Date.now()-simCaseCtx.startTs);
-    simCaseCtx.ans=null; simCaseCtx.startTs=Date.now(); simCaseCtx.i++;
-    if (simCaseCtx.i>=6){ simCaseCtx=null; sim.currentQid=null; NC.save(); return serveSim(); }
-    renderSimCase(c, simCaseCtx.i);
+    try {
+      NC.simCaseItemAnswered(sim, c, it.step, simCaseCtx.ans, Date.now()-simCaseCtx.startTs);
+      if (NC.api && NC.api.account && NC.api.track) {
+        NC.api.track(NC.trackPayload()).catch(()=>{});
+      }
+      simCaseCtx.ans=null; simCaseCtx.startTs=Date.now(); simCaseCtx.i++;
+      if (simCaseCtx.i>=c.items.length){ simCaseCtx=null; sim.currentQid=null; NC.save(); return serveSim(); }
+      renderSimCase(c, simCaseCtx.i);
+    } catch(err) {
+      console.error("Error in local sim case progression:", err);
+      simCaseCtx = null; sim.currentCase = null; sim.currentQid = null; NC.save();
+      return serveSim();
+    }
   };
   startSimClock(sim);
 }
@@ -1151,6 +1418,34 @@ function calcOverlay(){
     else if(["+","−","×","÷"].includes(k)){ if(op&&prev!=null&&!fresh){ curv=String(apply(parseFloat(prev),parseFloat(curv),op)); } prev=curv; op=k; fresh=true; }
     else if(k==="="){ if(op&&prev!=null){ curv=String(apply(parseFloat(prev),parseFloat(curv),op)); op=null; prev=null; fresh=true; } }
     disp.textContent = (curv.length>12? parseFloat(curv).toPrecision(8).replace(/\.?0+$/,"") : curv) || "0";
+  });
+}
+
+/* ---------- resilience net: prevent UI hangs & preserve user progress ---------- */
+if (typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", (ev) => {
+    console.error("Unhandled rejection caught by resilience net:", ev.reason);
+    try { NC.save(); } catch(_) {}
+    try {
+      document.querySelectorAll("button:disabled").forEach(b => {
+        if (b.textContent === "…" || b.textContent === "Saving…") {
+          b.disabled = false;
+          b.textContent = b.dataset.actText || "NEXT →";
+        }
+      });
+    } catch(_) {}
+  });
+  window.addEventListener("error", (ev) => {
+    console.error("Uncaught runtime error caught by resilience net:", ev.error || ev.message);
+    try { NC.save(); } catch(_) {}
+    try {
+      document.querySelectorAll("button:disabled").forEach(b => {
+        if (b.textContent === "…" || b.textContent === "Saving…") {
+          b.disabled = false;
+          b.textContent = b.dataset.actText || "NEXT →";
+        }
+      });
+    } catch(_) {}
   });
 }
 })();

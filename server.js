@@ -140,7 +140,7 @@ function sanitizeItem(q){
   if (c.matrix) c.matrix = { cols: c.matrix.cols.slice(), mode: c.matrix.mode, rows: c.matrix.rows.slice() };
   return c;
 }
-const sanitizeCase = c => Object.assign({}, c, { items: c.items.map(sanitizeItem) });
+const sanitizeCase = c => c ? Object.assign({}, c, { items: (c.items || []).map(sanitizeItem) }) : null;
 
 /* ── static: whitelist of key-free files only ── */
 const STATIC = {

@@ -49,7 +49,7 @@ NC.allItems = function(){
 NC.cn = id => T().clientNeeds.find(c=>c.id===id);
 NC.sysName = id => (T().systems.find(s=>s.id===id)||{}).name || id;
 NC.dName = d => T().difficulty[d].name;
-NC.diffB = q => (typeof q.b === "number") ? q.b : T().difficulty[q.d].b;
+NC.diffB = q => (q && typeof q.b === "number") ? q.b : (q && q.d != null && T().difficulty[q.d]) ? T().difficulty[q.d].b : 0;
 
 /* ── scoring: element-wise (polytomous) → fraction 0..1 ── */
 const set = a => new Set(Array.isArray(a)?a:[a]);
@@ -309,10 +309,9 @@ NC.recordAnswer = function(sid, qid, ans, timeMs, timed){
 };
 /* record a (possibly server-computed) score without needing the local answer key */
 NC.applyScore = function(sid, qid, ans, res, timeMs, timed){
-  const item = NC.item(qid); if (!item) return null;
   const st = S();
   st.responses = st.responses.filter(r=>!(r.sid===sid && r.qid===qid));
-  st.responses.push({ qid, sid, mode:st.sessions.find(s=>s.id===sid)?.mode||"practice", ans:JSON.parse(JSON.stringify(ans||null)),
+  st.responses.push({ qid, sid, mode:st.sessions.find(s=>s.id===sid)?.mode||"practice", ans:JSON.parse(JSON.stringify(ans!=null?ans:null)),
     score:res.score, answered:res.answered, ts:Date.now(), timeMs:timeMs||0, timed:!!timed });
   NC.recomputeTheta();
   NC.touchStreak();
@@ -542,15 +541,16 @@ NC.simAnswer = function(sim, item, ans, timeMs){
 };
 NC.simCaseItemAnswered = function(sim, caseObj, step, ans, timeMs){
   const qid = caseObj.id+"-"+step;
-  const item = NC.item(qid);
+  const item = NC.item(qid) || (caseObj.items && caseObj.items.find(x=>x.step===step)) || { id:qid, step, t:"single", b:caseObj.b||0, cn:caseObj.cn };
   const res = NC.scoreItem(item, ans);
-  sim.administered.push({qid, b:NC.diffB(item), pretest:false, scored:true, cn:caseObj.cn, t:item.t, score:res.score, answered:res.answered, done:true, caseId:caseObj.id});
+  sim.administered.push({qid, b:NC.diffB(item), pretest:false, scored:true, cn:caseObj.cn, t:(item&&item.t)||"single", score:res.score, answered:res.answered, done:true, caseId:caseObj.id});
   if (res.answered){
     sim.answeredCount++; sim.counts[caseObj.cn]=(sim.counts[caseObj.cn]||0)+1;
     sim.theta = simEAP(sim);
   }
-  sim.caseIdx++;
-  if (sim.caseIdx >= caseObj.items.length){ sim.currentCase=null; sim.casesDone++; }
+  sim.caseIdx = (sim.caseIdx || 0) + 1;
+  const totalItems = (caseObj.items && caseObj.items.length) || 6;
+  if (sim.caseIdx >= totalItems){ sim.currentCase=null; sim.casesDone=(sim.casesDone||0)+1; }
   NC.recordAnswer("sim:"+sim.id, qid, ans, timeMs, true);
   NC.save();
   return res;
