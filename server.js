@@ -140,7 +140,7 @@ function sanitizeItem(q){
   if (c.matrix) c.matrix = { cols: c.matrix.cols.slice(), mode: c.matrix.mode, rows: c.matrix.rows.slice() };
   return c;
 }
-const sanitizeCase = c => Object.assign({}, c, { items: c.items.map(sanitizeItem) });
+const sanitizeCase = c => c ? Object.assign({}, c, { items: (c.items || []).map(sanitizeItem) }) : null;
 
 /* ── static: whitelist of key-free files only ── */
 const STATIC = {
@@ -383,15 +383,20 @@ const requestHandler = async (req,res)=>{
       if (u === "/api/sim/next" && req.method==="POST"){
         const b = await body(req); const sim = NC.getSim(b.simId);
         if (!sim) return json(res,404,{error:"unknown sim"},req);
+        if (b.remainingMs && Date.now() > sim.endsAt) {
+          sim.endsAt = Date.now() + b.remainingMs;
+        }
         const nxt = NC.simNext(sim);
         if (nxt.kind==="done")  return json(res,200,Object.assign({kind:"done"}, simSummary(sim)), req);
         if (nxt.kind==="case")  return json(res,200,{kind:"case", case:sanitizeCase(nxt.case), resumeAt:nxt.resumeAt||0}, req);
+        sim.currentQid = nxt.item.id;
         return json(res,200,{ kind:"item", n:nxt.n, pretest:!!nxt.pretest, item:sanitizeItem(nxt.item) }, req);
       }
       if (u === "/api/sim/answer" && req.method==="POST"){
         const b = await body(req); const sim = NC.getSim(b.simId); const item = NC.item(b.qid);
         if (!sim || !item) return json(res,404,{error:"unknown sim/item"},req);
         NC.simAnswer(sim, item, b.ans, b.timeMs||0);
+        sim.currentQid = null;
         return json(res,200,{ received:true }, req);
       }
       if (u === "/api/sim/case-answer" && req.method==="POST"){

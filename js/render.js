@@ -177,7 +177,8 @@ function matrix(item, state, opts){
       inp.checked = !!isOn;
       if (opts.review){
         const should = m.mode==="check" ? (m.ans[r]||[]).includes(c) : m.ans[r]===c;
-        td.classList.add(should?"mark-ok": (isOn?"mark-bad":""));
+        if (should) td.classList.add("mark-ok");
+        else if (isOn) td.classList.add("mark-bad");
         inp.disabled = true;
       } else {
         inp.onchange = ()=>{
