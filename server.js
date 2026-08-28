@@ -8,6 +8,7 @@
 const http = require("http"), fs = require("fs"), path = require("path"), vm = require("vm"),
       crypto = require("crypto"), zlib = require("zlib");
 const ROOT = __dirname, PUB = path.join(ROOT, "public");
+const SERVERLESS = !!process.env.VERCEL; // Vercel functions set VERCEL=1 — no listen(), handler is exported
 const store = require("./store");
 const calibrate = require("./calibrate");
 const authoring = require("./authoring.js");
@@ -22,17 +23,24 @@ const ADMIN_KEY = process.env.ADMIN_KEY || "dev-admin"; // set ADMIN_KEY in prod
            present in the database are ignored.
    Demo ids are recognizable by prefix: items DEMO-*, cases CASE-DEMO-*.  */
 const DEMO_BANK = /^(1|true|yes|on)$/i.test(process.env.DEMO_BANK || "");
-if (!process.env.ADMIN_KEY && process.env.NODE_ENV === "production"){
-  console.error("[fatal] NODE_ENV=production but ADMIN_KEY is not set — refusing to start.");
+if (!process.env.ADMIN_KEY && process.env.NODE_ENV === "production" && !SERVERLESS){
+  console.error("[fatal] NODE_ENV=production but ADMIN_KEY is not set — refusing to start. Set ADMIN_KEY in the environment (Render dashboard / .env).");
   process.exit(1);
 }
-if (!process.env.ADMIN_KEY) console.warn("[warn] ADMIN_KEY not set — using dev default");
+if (!process.env.ADMIN_KEY && SERVERLESS){
+  // On Vercel the deployment must still come up for examinees, so instead of
+  // exiting the admin surface is LOCKED (no admin principal exists → every
+  // X-Admin-Key is rejected) until ADMIN_KEY is set in the project settings.
+  console.error("[fatal] ADMIN_KEY is not set — admin/authoring endpoints return 401. Set ADMIN_KEY in Vercel → Settings → Environment Variables, then redeploy.");
+}
+else if (!process.env.ADMIN_KEY) console.warn("[warn] ADMIN_KEY not set — using dev default");
 
 /* ── role principals (v3k): ADMIN_KEY stays break-glass admin; AUTH_KEYS adds
    narrowly-scoped staff keys.  Format:  AUTH_KEYS="key:role:name,key:role:name"
    roles: author · reviewer · publisher · editor (see authoring.ACTIONS).
    Read endpoints accept any principal; writes are gated per role.            */
-const PRINCIPALS = new Map([[ADMIN_KEY, { role:"admin", name:"admin" }]]);
+const PRINCIPALS = new Map((process.env.ADMIN_KEY || !SERVERLESS)
+  ? [[ADMIN_KEY, { role:"admin", name:"admin" }]] : []);
 for (const part of (process.env.AUTH_KEYS||"").split(",")){
   const t = part.trim(); if (!t) continue;
   const [key, role, name] = t.split(":");
@@ -52,9 +60,9 @@ const guard = (req, res, action) => {
 const ctx = { console, Math, JSON, Date, Set, Map, Array, Object, Number, String, parseInt, parseFloat, isNaN, setTimeout, clearTimeout };
 ctx.globalThis = ctx; ctx.window = ctx;
 vm.createContext(ctx);
-{ const { contentFiles } = require("./content");
-  for (const f of ["js/taxonomy.js", ...contentFiles().all, "js/engine.js"])
-  vm.runInContext(fs.readFileSync(path.join(ROOT,f),"utf8"), ctx, {filename:f});
+{ const C = require("./content"); // discovery + loadSource: disk first, embedded (Vercel) fallback
+  for (const f of ["js/taxonomy.js", ...C.contentFiles().all, "js/engine.js"])
+  vm.runInContext(C.loadSource(f), ctx, {filename:f});
 }
 const NC = ctx.window.NC;
 const engState = vm.runInContext("NC.load()", ctx);
@@ -568,7 +576,23 @@ function listenAll(){
   }
 }
 
-if (store.loadAsync){ // async backend (Postgres): link refs only after the doc arrives
-  store.loadAsync().then(()=>{ hydrate(); listenAll(); })
-    .catch(e=>{ console.error("[fatal] store init failed:", e.message); process.exit(1); });
-} else { hydrate(); listenAll(); }
+/* ── boot ──
+   standalone (node server.js / Render): hydrate from the store, then listen.
+   serverless (Vercel, via api/index.cjs): hydrate once per instance and export
+   { handler, ready } — @vercel/node drives `handler` per invocation; nothing
+   ever listens.                                                                  */
+const ready = Promise.resolve()
+  .then(() => store.loadAsync ? store.loadAsync() : null)
+  .then(() => { hydrate(); })
+  .catch(e => {
+    console.error("[fatal] store init failed:", e.message);
+    if (require.main === module) process.exit(1);
+    throw e; // serverless: api/index.cjs turns this into a 500 per request
+  });
+
+if (require.main === module){
+  ready.then(listenAll).catch(() => process.exit(1));
+}
+
+/* dual-mode export: request handler + boot promise (see api/index.cjs) */
+module.exports = { handler: requestHandler, ready, server };

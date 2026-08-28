@@ -91,6 +91,13 @@ Cloud: **Render Web Service (free tier) + Supabase Postgres** — see
 settings), `npm run db:migrate` (schema.sql, idempotent), then
 `npm run db:seed` (loads the bank into the `items`/`cases` tables).
 
+**Vercel also works out of the box** (`vercel.json` + `api/index.js`; see
+DEPLOYMENT.md §3b). The Vercel build embeds the bank into the serverless
+bundle and serves the key-free app from the CDN; set `ADMIN_KEY` and
+`STORE=pg`/`DATABASE_URL` in the project settings. Deploy from the repo —
+not from a locally mutated copy (a hand-renamed `server.cjs` deployment is
+what caused the 2026-08 `/var/task/js` ENOENT outage).
+
 The content bank lives in Postgres at runtime: the server reads `items` and
 `cases` at boot and overlays them on the in-repo bank, so editing a row in
 the database changes what examinees see on the next restart without a

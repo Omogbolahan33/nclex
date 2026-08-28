@@ -97,6 +97,54 @@ created service.
   roughly a minute to wake. Exam state lives in Postgres, so nothing is lost.
 - Auto-deploy on push to `main` is on by default; leave it on.
 
+## 3b. Deploy to Vercel (alternative to Render)
+
+The repo ships first-class Vercel support (`vercel.json`, `api/index.js`).
+Framework preset **Other**; no dashboard config needed beyond env vars.
+
+> **Deploy from the repo, never from a hand-mutated local folder.** A previous
+> deploy failed with `ENOENT … scandir '/var/task/js'` because `server.js` /
+> `content.js` had been renamed to `.cjs` in the deploy directory and the
+> serverless bundle was assembled without the `js/` content files. The repo's
+> own pipeline handles all of that: the build step
+> (`node scripts/vercel-content.mjs`) embeds every bank/case file into the
+> function bundle, and `content.js` falls back to that embedded copy when
+> `js/` is not on disk.
+
+**What the Vercel pipeline does** (driven by `vercel.json`):
+
+| Piece | What |
+|---|---|
+| `buildCommand` | embeds content (`scripts/vercel-content.mjs`) → builds the key-free app (`build-online.mjs`) |
+| `outputDirectory: public` | only the key-free shell is served from the CDN — banks with answer keys never ship to the browser |
+| `api/index.js` | serverless entry: boots the engine once per instance, drives the same `requestHandler` as the standalone server |
+| `rewrites` | `/` → `index-app.html`, `/favicon.ico` → `icon.svg`, `/api/*` → the function; unmatched paths 404 at the CDN |
+
+**Steps**
+
+1. `vercel` from a clean checkout of this repo (or import the GitHub repo in
+   the dashboard — Framework: **Other**; `vercel.json` drives the rest).
+2. Set env vars (Project → Settings → Environment Variables):
+   - `ADMIN_KEY` — required. Without it the app still boots for examinees,
+     but **all admin/authoring endpoints are locked** (401) — the log says so.
+   - `STORE=pg` + `DATABASE_URL` — strongly recommended. The default JSON
+     store degrades to the instance's `/tmp` on Vercel (read-only deploy dir):
+     every cold start starts empty and writes are lost on redeploy.
+   - `DEMO_BANK`, `AUTH_KEYS` — same meaning as on Render.
+3. `vercel --prod` (CLI) or push to the connected branch.
+4. Verify: `/api/health` → `"ok":true` with the expected `items` count.
+
+**Notes**
+
+- Serverless = per-instance memory. Engine state (sims, exposure counts)
+  hydrates from the store on each cold start; with `STORE=pg` this is
+  transparent, without it the instances do not share state.
+- Postgres connections scale with concurrent instances — keep the Supabase
+  **session pooler** URL as on Render (see §2).
+- `npm test`, `npm run build`, Render, and local dev are unaffected: the
+  embedded bundle is generated only by the Vercel build command and is
+  gitignored (`vercel-content.cjs`).
+
 ## 4. Migrate the database (once per fresh DB)
 
 The server boots against an empty database without crashing, but tables are
