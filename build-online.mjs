@@ -15,7 +15,7 @@ fs.writeFileSync(path.join(pub,"sw.js"),
 fs.copyFileSync(path.join(root,"manifest.webmanifest"), path.join(pub,"manifest.webmanifest"));
 fs.copyFileSync(path.join(root,"icon.svg"), path.join(pub,"icon.svg"));
 let html = fs.readFileSync(path.join(root,"index.html"),"utf8");
-html = html.replace(/<script src="js\/(bank\d*|bank|cases?3?|case[3-6])\.js"><\/script>\n?/g, ""); // strip every content file
+html = html.replace(/<script src="js\/(bank|cases?)[0-9]*\.js"><\/script>\n?/g, ""); // strip every content file
 fs.writeFileSync(path.join(pub,"index-app.html"), html);
 const { contentFiles } = await import("./content.js");
 const bankSize = contentFiles(process.cwd()).all.map(p=>p.replace(/^js\//,""))
