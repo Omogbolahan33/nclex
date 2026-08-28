@@ -16,11 +16,14 @@ function contentFiles(root){
   const baseDir = root || process.env.RENDER_SRC_DIR || process.cwd();
   const dir = path.join(baseDir, "js");
   
+  // Debug log to inspect path assembly directly within Vercel logs if it fails
+  console.log("Attempting to scan content files directory at:", dir);
+
   const found = fs.readdirSync(dir).map(f => {
     const m = /^(bank|cases?|case)([0-9]*)[.]js$/.exec(f);
     if (!m) return null;
     
-    // Fixed: m[2] checks the captured regex number string; m[1] checks the file kind group
+    // Fallback handling for capture parsing matches
     const n = m[2] === "" ? (m[1] === "bank" ? 1 : 0) : parseInt(m[2], 10);
     return { file: f, kind: m[1].startsWith('case') ? 'case' : 'bank', n };
   }).filter(Boolean);
