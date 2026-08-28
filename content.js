@@ -12,16 +12,23 @@
 const fs = require("fs"), path = require("path");
 
 function contentFiles(root){
-  const dir = path.join(root || __dirname, "js");
+  // Resolves the correct root path automatically on Vercel, Render, or Local
+  const baseDir = root || process.env.RENDER_SRC_DIR || process.cwd();
+  const dir = path.join(baseDir, "js");
+  
   const found = fs.readdirSync(dir).map(f => {
     const m = /^(bank|cases?|case)([0-9]*)[.]js$/.exec(f);
     if (!m) return null;
+    
+    // Fixed: m[2] checks the captured regex number string; m[1] checks the file kind group
     const n = m[2] === "" ? (m[1] === "bank" ? 1 : 0) : parseInt(m[2], 10);
     return { file: f, kind: m[1].startsWith('case') ? 'case' : 'bank', n };
   }).filter(Boolean);
+  
   const byN = (a,b) => a.n - b.n || a.file.localeCompare(b.file);
   const banks = found.filter(x => x.kind === "bank").sort(byN);
   const cases = found.filter(x => x.kind === "case").sort(byN);
+  
   return {
     banks: banks.map(x => "js/" + x.file),
     cases: cases.map(x => "js/" + x.file),
