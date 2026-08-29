@@ -16,6 +16,7 @@ npm run test:api       # API/security/authoring/PWA/hardening suite (~140, CAT-l
 npm run lint           # item-writing gate + duplicate-content scan of the bank
 npm run calibrate      # item calibration report from the response log (--apply to persist)
 npm run db:dedupe      # report duplicate question rows in the database (--delete to clean)
+npm run import:bank    # bulk-import a JSON bank file as reviewable drafts (see below)
 ```
 
 ## Architecture

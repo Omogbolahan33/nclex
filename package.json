@@ -13,7 +13,8 @@
     "lint": "node itemlint.js",
     "db:seed": "node scripts/db-seed.js",
     "db:seed:demo": "node scripts/db-seed-demo.js",
-    "db:dedupe": "node scripts/db-dedupe.js"
+    "db:dedupe": "node scripts/db-dedupe.js",
+    "import:bank": "node scripts/import-bank.js"
   },
   "dependencies": {
     "pg": "^8.16.3"
