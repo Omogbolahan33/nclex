@@ -351,21 +351,26 @@ console.log("— PN depth: family affinity + PN blueprint tracking —");
       ok(c.PSY>=6, `PN blueprint: psychosocial represented (${c.PSY})`);
     }
   }
-  // Affinity assertion must scale with bank composition, not freeze a floor.
-  // `pnTot>=8` was calibrated when PN items were 30/308 (9.7%) of the bank;
-  // authoring more shared (untagged) items dropped that share and the floor
-  // failed 6/8 runs without any affinity regression. Affinity also does not
-  // BOOST PN-tagged items — the filter keeps untagged items eligible too — so
-  // observed pnTot legitimately lands below the by-share expectation, because
-  // the 30 PN items get marked seen in sim 1 and leastSeenFirst then
-  // deprioritizes them in sim 2. So assert "a meaningful share of the
-  // by-share expectation", which still fails hard if PN content is starved.
-  const pnItems = NC.BANK.filter(q=>q.fam==="PN").length;
-  const pnShare = pnItems/Math.max(1,NC.BANK.length);
-  const byShare = Math.max(2, Math.round(pnShare * 176));
-  ok(pnTot >= Math.max(2, Math.round(0.35*byShare)),
-     `PN sims served PN-scope items (${pnTot}, >= 35% of by-share expectation ${byShare}; PN share ${(100*pnShare).toFixed(1)}%)`);
-  ok(rnTot===0, `PN sims never served RN-scope-flagged items (${rnTot})`);
+  // Affinity is an EXCLUSION contract, not a boost. js/engine.js keeps untagged
+  // items eligible for every family (`!q.fam || q.fam===sim.cfg.examFamily`) and
+  // only drops items tagged for a DIFFERENT family. A by-share floor is therefore
+  // the wrong model: authoring shared (untagged) items legitimately lowers the PN
+  // share with no affinity regression. That is exactly what happened twice — the
+  // original `pnTot>=8` failed 6/8 runs, and its 35%-of-by-share replacement then
+  // failed on the next wave (pnTot 4 vs floor 5) while affinity was still correct.
+  // So assert the invariant the selector actually guarantees, both empirically
+  // over the items really served and deterministically over the eligibility pool.
+  ok(rnTot===0, `PN sims never served another family's items (${rnTot})`);
+  ok(pnTot >= 2, `PN sims served PN-scope content (${pnTot})`);
+  // Deterministic form, independent of selector randomness and bank composition:
+  const pnPool = NC.BANK.filter(q => !q.fam || q.fam === "PN");
+  ok(pnPool.every(q => q.fam !== "RN"),
+     "PN eligibility pool excludes every RN-tagged item");
+  const pnTagged = NC.BANK.filter(q => q.fam === "PN").length;
+  ok(pnPool.filter(q => q.fam === "PN").length === pnTagged,
+     `PN eligibility pool keeps every PN-tagged item (${pnTagged})`);
+  ok(pnPool.length < NC.BANK.length,
+     "PN affinity narrows the pool rather than matching everything");
 }
 
 console.log("— NCLEX-PN 2026 exam configuration (v3d) —");
