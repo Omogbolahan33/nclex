@@ -19,9 +19,30 @@ function radio(name,val){ return `<input type="radio" name="${name}" value="${va
 const TABS = [["#/home","⌂","Home"],["#/practice","✎","Practice"],["#/study","◔","Study"],["#/simulate","◷","Simulate"],["#/progress","▤","Progress"]];
 NC.actions = {};
 NC.actions["go"] = (d)=>{ if(d && d.to) go(d.to); };
+/* "12 new · 3 seen before" — the app used to silently recycle answered items
+   when a filter ran dry, which reads to a candidate as "there are no new
+   questions". Every practice entry point now says what it is serving.       */
+function freshLine(filters){
+  const total = NC.countFor(Object.assign({}, filters, { excludeSeen:false }));
+  const fresh = NC.freshCount(filters);
+  if (!total) return `<b style="color:var(--teal)">0</b> items match`;
+  return fresh < total
+    ? `<b style="color:var(--teal)">${fresh}</b> new · ${total-fresh} already answered (${total} match)`
+    : `<b style="color:var(--teal)">${total}</b> items match — all new`;
+}
+NC.ui.freshLine = freshLine;
+function freshToast(s){
+  if (!s || !s.items || !s.items.length) return;
+  if (s.recycled > 0 && s.fresh === 0)
+    NC.ui.toast(`You've answered all of these before — recycling ${s.recycled} for spaced review`);
+  else if (s.recycled > 0)
+    NC.ui.toast(`${s.fresh} new · ${s.recycled} seen before`);
+}
+NC.ui.freshToast = freshToast;
 NC.actions["start"] = (d)=>{
   const count = Math.min(+d.count||10, NC.countFor({excludeSeen:false}));
   const s = NC.newSession({mode:d.mode||"quick", count:Math.max(1,count), filters:{excludeSeen:true}});
+  freshToast(s);
   go("#/session/"+s.id);
 };
 function tabbar(active){
@@ -257,7 +278,9 @@ function customBuilder(){
     <button class="btn" data-act="cf-start">Start practice →</button></div>`, "#/practice");
   const rerenderMatch = ()=>{
     const n = NC.countFor({cn:[...CF.cn], sys:[...CF.sys], types:[...CF.types], diffs:[...CF.diffs], cj:[...CF.cj], tags:[...CF.tags], excludeSeen:false});
-    document.getElementById("cf-match").innerHTML = `<b style="color:var(--teal)">${n}</b> items match · starting ${Math.min(CF.count,n)}`;
+    document.getElementById("cf-match").innerHTML =
+      freshLine({cn:[...CF.cn], sys:[...CF.sys], types:[...CF.types], diffs:[...CF.diffs], cj:[...CF.cj], tags:[...CF.tags]}) +
+      ` · starting ${Math.min(CF.count,n)}`;
     return n;
   };
   document.querySelectorAll(".seg[data-set]").forEach(seg=>{
@@ -273,6 +296,7 @@ function customBuilder(){
   NC.actions["cf-start"] = ()=>{ const n=rerenderMatch(); if(!n) return NC.ui.toast("No items match — relax a filter");
     const s = NC.newSession({mode:"custom", count:Math.min(CF.count,n), timed:CF.timed, secs:CF.timed? Math.min(CF.count,n)*90:null,
       filters:{cn:[...CF.cn], sys:[...CF.sys], types:[...CF.types], diffs:[...CF.diffs], cj:[...CF.cj], tags:[...CF.tags], excludeSeen:true}});
+    freshToast(s);
     go("#/session/"+s.id); };
   rerenderMatch();
 }
@@ -307,6 +331,7 @@ NC.actions["axis-drill"] = (d)=>{
   const n = NC.countFor({...filters, excludeSeen:false});
   if (!n) return NC.ui.toast("No items available yet");
   const s = NC.newSession({mode:"custom", count:Math.min(20,n), filters:{...filters, excludeSeen:true}});
+  freshToast(s);
   go("#/session/"+s.id);
 };
 
@@ -788,7 +813,7 @@ NC.actions["sim-start"] = async (d,elm)=>{
       NC.load().sims.push(sim); NC.save();
     }catch(e){ NC.ui.toast("Could not reach the exam server"); if(elm){elm.disabled=false; elm.textContent="Begin simulation →";} return; }
   } else {
-    sim = NC.newSim(d.exam);
+    sim = NC.newSim(d.exam, { avoid:Object.keys(NC.load().seen||{}).slice(-5000) });
   }
   NC.logEvent("sim_started",{exam:d.exam, remote:!!sim.remote});
   go("#/sim/run/"+sim.id);
@@ -1022,7 +1047,7 @@ function renderSimCaseRemote(sim, c, startAt){
 }
 function serveSim(){
   const sim = simCtx.sim;
-  const nxt = NC.simNext(sim);
+  const nxt = NC.simNext(sim, { avoid:Object.keys(NC.load().seen||{}).slice(-5000) });
   if (nxt.kind==="done"){ return simResults(sim.id); }
   if (nxt.kind==="case"){
     if (!nxt.case || !Array.isArray(nxt.case.items) || !nxt.case.items.length) {
@@ -1225,7 +1250,8 @@ function simResults(simId){
   const scoredAdmin=sim.administered.filter(x=>x.scored);
   const outcome=sim.outcome;
   const pill = outcome==="above"? `<span class="verdict-pill above">Above readiness threshold</span>`: outcome==="below"? `<span class="verdict-pill below">Below readiness threshold</span>`: `<span class="verdict-pill border">Borderline — indistinguishable from the passing standard at this length</span>`;
-  const reason = {["confidence-above"]:"95% confidence above the standard — stopped early",["confidence-below"]:"95% confidence below the standard — stopped early",max:"Maximum items reached",time:"Time expired"}[sim.stopReason]||sim.stopReason;
+  const reason = {["confidence-above"]:"95% confidence above the standard — stopped early",["confidence-below"]:"95% confidence below the standard — stopped early",max:"Maximum items reached",time:"Time expired",
+    pool:"Item pool exhausted — the exam stopped rather than repeat a question you had already answered"}[sim.stopReason]||sim.stopReason;
   const se=NC.seAbility(sim.theta, scoredAdmin);
   const thetaPos = Math.max(0,Math.min(100, ((sim.theta+2.5)/5)*100));
   const cutPos = ((sim.cfg.cut+2.5)/5)*100;

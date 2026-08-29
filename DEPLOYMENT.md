@@ -264,6 +264,59 @@ Verified by `test/demo.mjs` (`npm test`): content shape, itemlint HARD gates,
 engine scoring of every key, and a real two-boot test of the switch against a
 store that already contains the demo rows.
 
+## 4d. Duplicate questions in the bank
+
+A database-seeded bank can end up holding the same question twice — a document
+imported a second time, a wave re-seeded from a renamed file. Because every
+selection rule is keyed on **qid**, two copies of one question look unrelated,
+and an examinee can meet the same question once per copy in a single exam.
+
+The server now handles this at three levels; nothing here is required for
+correctness, but the tooling tells you what is in your table.
+
+**1. Runtime (automatic).** At boot `server.js` fingerprints every item (stem +
+presented options) and its stem, and links any cluster of two or more into one
+constraint group. At most one member of a group is served per exam or practice
+session, in every selection path, and re-tests rotate to the least-exposed
+copy. The boot log says what it found:
+
+```
+duplicate content linked: 2 cluster(s) covering 4 items (0 same-content, 2 shared-stem) — one member per exam/session
+  · DEMO-018 = DEMO-023  [same-stem]
+  · DEMO-077 = DEMO-109  [same-stem]
+```
+
+or, for a clean bank:
+
+```
+no duplicate content in the bank (11 authored variant group(s) enforced as one-per-exam)
+```
+
+`GET /api/health` reports `duplicateClusters` / `duplicateItems` /
+`variantGroups`; `GET /api/admin/duplicates` (any staff key) returns the full
+cluster list with ids, reasons and stem previews.
+
+**2. Report and clean the table.**
+
+```bash
+DATABASE_URL="postgresql://…" npm run db:dedupe              # report only
+DATABASE_URL="postgresql://…" npm run db:dedupe -- --delete --dry-run
+DATABASE_URL="postgresql://…" npm run db:dedupe -- --delete   # remove the extra rows
+```
+
+The report separates **same-content** (a true repeat — one row is enough) from
+**shared-stem** (an item set: same stem, different options — left alone). Which
+copy survives is `--keep=first` (lowest qid, the default), `--keep=last`, or
+`--keep=least` (the least-exposed copy per the `seen` table). Deleting a row
+does not rewrite history — responses, sims and the calibration log keep their
+qid — it just stops that copy being served. Re-run `npm run db:seed` only if
+the repo bank still contains the row you removed, otherwise it comes back.
+
+**3. Prevention.** `npm run lint` fails on same-content clusters, and the
+authoring pipeline rejects a draft or bulk import that repeats a bank item,
+naming the id it collides with — merge the change into that item or give the
+new one a `variantGroup` so the two alternate instead of repeating.
+
 ## 5. Verify the deployment
 
 ```bash
@@ -283,6 +336,8 @@ curl -H "X-Admin-Key: <staff-key>" $BASE/api/admin/items   # queue — echoes yo
 
 - `items` = standalone bank items; `cases` = case sets (344 total at repo default).
   With `DEMO_BANK=1` these become `107` / `6` and `demoBank` reads `true`.
+- `duplicateClusters` / `duplicateItems` = repeated content found in the bank
+  (see §4d); `variantGroups` = authored alternates, counted separately.
 - Without a key, admin endpoints return 401; wrong role returns
   `403 {"error":"not permitted for role 'author'"}`.
 

@@ -11,9 +11,11 @@ and answer keys that never leave the server.
 npm i jsdom            # once per environment (dev dependency for the DOM test)
 npm run build          # build standalone.html + public/ (key-free app)
 npm start              # exam server on :3000
-npm test               # engine/bank smoke (1531) + DOM (64) + admin (35) + store contract (24)
-npm run test:api       # API/security/authoring/PWA/hardening suite (~120, CAT-length dependent) — needs `npm start` running
+npm test               # engine/bank smoke (1572) + DOM (96) + admin (35) + store (32) + demo (1214)
+npm run test:api       # API/security/authoring/PWA/hardening suite (~140, CAT-length dependent) — needs `npm start` running
+npm run lint           # item-writing gate + duplicate-content scan of the bank
 npm run calibrate      # item calibration report from the response log (--apply to persist)
+npm run db:dedupe      # report duplicate question rows in the database (--delete to clean)
 ```
 
 ## Architecture
@@ -31,7 +33,8 @@ js/bank*.js      308 standalone items (30 PN-scope, fam-tagged) incl. 11 variant
                  7 item formats, full metadata + rationales (server-side only)
 js/case*.js      3 unfolding NCJMM case studies (18 items)
 js/engine.js     scoring · θ ability · blueprint CAT · stopping rules · SRS ·
-                 stats/readiness · sync merge (DOM-free, unit-tested)
+                 stats/readiness · sync merge · duplicate-content detection
+                 (DOM-free, unit-tested)
 js/render.js     7 NCLEX format renderers (accessible + review marking)
 js/ui.js         hash router + screens (Home/Practice/Study/Simulate/Progress/Settings)
 js/api.js        remote adapter: sanitized bootstrap, server scoring,
@@ -59,7 +62,7 @@ store-pg.js      Postgres adapter v2 (PER-TABLE NORMALIZED): users · tokens ·
                  flush + automatic v1 document migration; identical interface; `npm i pg`
 schema.sql       Postgres DDL v2: normalized tables (users, tokens, responses,
                  sims, seen, authoring_records, bank_patches, meta) + v1 migration
-test/            smoke (1529) · dom (64) · admin (35) · store (24) · api (~120) — 1,770+ checks total
+test/            smoke (1572) · dom (96) · admin (35) · store (32) · demo (1214) · api (~140, CAT-length dependent) — 3,090+ checks total
 ```
 
 ## Feature set
@@ -77,7 +80,8 @@ test/            smoke (1529) · dom (64) · admin (35) · store (24) · api (~1
 | **Persistence (v3a)** | Users, tokens, sims, and the full response log survive restarts (`data/store.json`) — the response log is the feed for future item calibration |
 | **Security** | Sanitized bank in the browser (no keys/rationales), server-side scoring, bank files never served (404), per-IP rate limits (auth 30/5 min, API 400/min), no plaintext secrets at rest |
 | **Authoring & review (v3c)** | Workflow draft → clinical review → approved → published with legal-transition enforcement and version history (outgoing items snapshotted, never silently overwritten); full item-schema validation; bulk import (AI drafts land as drafts — human review before anything reaches examinees); export for backup; published items grow the live bank via persistent boot-replayed patches; admin console at `/admin` (key-gated) |
-| **Anti-memorization (v3c/e)** | Items can carry a `variantGroup` (7 groups); the engine serves at most one member per exam/session in every selection path (practice, smart, diagnostic, simulation) and rotates re-tests to the least-exposed sibling |
+| **Anti-memorization (v3c/e)** | Items can carry a `variantGroup` (11 groups); the engine serves at most one member per exam/session in every selection path (practice, smart, diagnostic, simulation) and rotates re-tests to the least-exposed sibling |
+| **No repeats, ever (v3o)** | A question is served **at most once per exam** — excluded by qid, by variant/duplicate group, and by content, so a bank that holds the same question under two ids cannot show it twice. When the eligible pool runs out the exam ends (`stopReason:"pool"`) instead of recycling answered items. Duplicate content (same stem + options, or a shared stem) is detected at boot, linked into one constraint group, reported at `GET /api/admin/duplicates`, and blocked at the authoring gate. Exposure history (`seen`) syncs with the account, and practice says out loud how much of a set is new: `12 new · 3 already answered` |
 | **Key-gated explanations (v3c)** | `/api/item/:id/full` refuses (403) unless the requesting session already answered that item — rationales are never available before submission, even to a crafted request |
 | **NCLEX-PN 2026 (v3d)** | Full PN simulation from the official 2026 PN Test Plan: 85–150 items · 5 h · 3 CJ case sets · 15 pretest; PN blueprint (Coordinated Care 21% · S&IP&C 13% · HP&M 9% · Psych 12% · BCC 10% · Pharm 13% · RRP 12% · Phys Adapt 10%) with PN client-need naming, plus a short PN preview; per-exam blueprint is now engine data (`ExamConfiguration.blueprint`) — RN exams unchanged. Draws from the shared RN bank — disclosed in pre-flight as an approximation |
 | **Distractor analysis (v3d)** | Per-option pick rate + point-biserial vs rest-score for single/multi items from the response log; flags dead (<5%), attracts-strong (rpb >+0.20 on a non-key option), weak-key; `GET /api/admin/distractors` + admin-console card + CLI section |
@@ -136,11 +140,53 @@ REQ_LOG=1 npm start                                            # per-request acc
 | Storage | JSON default (atomic, debounced) or per-table Postgres (schema.sql v2; TLS auto-required for Supabase/Render/RDS hosts) |
 | TLS | cert/key PEM paths + optional port; dev cert generation in `data/tls/` for testing only |
 
+### Duplicate questions & repeats (v3o)
+
+Two symptoms, one root cause each:
+
+*“I saw the same question five times in one simulation.”* A bank seeded or
+imported into a database can hold the same question under several qids, and
+every selection rule was keyed on qid — so the copies looked unrelated. Worse,
+when the eligible pool ran out mid-exam the engine fell back to the **whole
+bank**, re-serving items the candidate had already answered (measured: the same
+item up to 12× in one sitting on a 30-item pool). Both are gone:
+
+- an item is excluded from an exam by qid **and** by variant/duplicate group,
+  and there is no full-bank fallback — when nothing new is left the exam ends
+  with `stopReason:"pool"` and is scored on what was administered;
+- `NC.duplicateIndex()` fingerprints every item (stem + presented options) and
+  its stem, unions those with authored `variantGroup` edges, and any cluster of
+  ≥2 becomes one constraint group — at most one member per exam/session, in
+  every selection path (simulation, practice, smart, diagnostic).
+
+Nothing is deleted, so responses, stats, calibration and authoring history keep
+resolving; the extra copies simply can never be co-served.
+
+*“There are no new questions.”* `pickItems` used to silently drop
+`excludeSeen` whenever the unseen pool was smaller than the request, and the
+exposure map lived only in one device's `localStorage`. Now new items are
+always taken first and recycled ones fill the tail least-exposed-first, the
+session records its own split (`s.fresh` / `s.recycled`), the UI states it
+(`12 new · 3 already answered`), and `seen` rides the account sync
+(`/api/track` → `/api/state`, merged by max) so a second device or a cleared
+cache no longer starts from zero. Sims also receive the candidate's history as
+a soft preference, so returning candidates get new material first.
+
+| Where | What |
+|---|---|
+| boot log | `duplicate content linked: N cluster(s) …` or `no duplicate content in the bank` |
+| `GET /api/health` | `duplicateClusters` · `duplicateItems` · `variantGroups` |
+| `GET /api/admin/duplicates` | full cluster report with ids, reasons and stem previews |
+| `npm run lint` | duplicate scan; same-content clusters fail the lint gate |
+| `npm run db:dedupe` | reports duplicate rows straight from the `items` table; `--delete` removes the extra copy (`--keep=first\|last\|least`, `--dry-run` to preview) |
+| authoring gate | a draft/import that repeats a bank item is rejected with the id it collides with |
+
 ## Honest limits (ongoing)
 
 - Practice *selection* is still client-side (scoring is server-side).
 - Calibration needs real candidate volume — current stats come mostly from test traffic (n≥8 gate, blend weight n/(n+20) protects against thin data).
 - Offline-queued answers score only on reconnect (keys are server-side by design) — pending items are excluded from stats until synced.
+- **v3o — no repeats**: hard one-serve-per-exam rule (qid + variant/duplicate group, no full-bank fallback — a dry pool ends the exam as `stopReason:"pool"`), boot-time duplicate-content detection that links repeats and shared stems into one constraint group, an authoring/import gate against new duplicates, `npm run db:dedupe` + `GET /api/admin/duplicates` reporting, and exposure history (`seen`) synced per account with honest "N new · M already answered" messaging in practice.
 - **v3m — deploy + scale**: `content.js` auto-discovers `js/bank<N>.js`/`js/case<N>.js` (drop a file in, add its script tag — the smoke drift guard fails on missing *or* stale tags; all loaders/linter/calibration/build/tests share it), Render Web Service settings (`render.yaml`) + Supabase runbook (`DEPLOYMENT.md`) + idempotent `npm run db:migrate`, managed-Postgres TLS auto-detect, and `tools/draft-bank.mjs` — a bulk scaffolder that emits schema-valid drafts continuing each CN ID sequence for the governed import→review→approve→publish pipeline (verified live: published item reaches examinees, drafts never do; bank restored after retire). Bootstrap payload: 240 KB raw / 75 KB gzipped at 344 items (~250 B/item gzipped → thousands ≈ well under 1 MB). Health/banner versions now track `package.json`.
 - **v3l — governance + storage**: role-based authoring (AUTH_KEYS="key:role:name,…": author drafts, reviewer approves — with separation of duties, a reviewer cannot approve content they last edited — publisher releases; admin stays break-glass and self-approvals are tagged in history; 403 vs 400 semantics enforced), and per-table Postgres normalization (schema.sql v2: users/tokens/responses/sims/seen/authoring_records/bank_patches/meta; automatic v1→v2 document migration on first boot; ts-watermarked upsert responses mirroring the engine's replace-on-re-answer; legacy backup row kept for rollback).
 - Bank is 308 items (v3k: PN-specific depth — 30 PN-scope items written from the practical/vocational nurse perspective, a `fam` affinity system in the exam engine so PN sims prefer PN-authored items and the PN case study while RN sims draw the shared/RN pool, and CASE-LTC-01, a long-term-care delirium case; RN exams now declare examFamily:RN).

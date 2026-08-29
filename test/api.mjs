@@ -111,6 +111,34 @@ ok(tr.status===200, "track accepted");
 let stt = await fetch(B+"/api/state", {headers:{Authorization:"Bearer "+TOK}}).then(r=>r.json());
 ok(stt.responses.length===2 && stt.theta===0.6, "state merge: "+stt.responses.length+" responses, theta "+stt.theta);
 
+console.log("— exposure history syncs (no silent re-serving on a new device) —");
+{
+  const seenPost = (seen) => fetch(B+"/api/track", {method:"POST",
+    headers:{"Content-Type":"application/json", Authorization:"Bearer "+TOK},
+    body:JSON.stringify({seen})}).then(r=>r.json());
+  const getState = () => fetch(B+"/api/state", {headers:{Authorization:"Bearer "+TOK}}).then(r=>r.json());
+  let s1 = await getState();
+  ok(s1.seen && typeof s1.seen === "object", "GET /api/state returns a seen map");
+  await seenPost({ "MOC-001": 2, "PHA-007": 1 });
+  s1 = await getState();
+  ok(s1.seen["MOC-001"] === 2 && s1.seen["PHA-007"] === 1,
+     `uploaded exposure history is stored (MOC-001=${s1.seen["MOC-001"]}, PHA-007=${s1.seen["PHA-007"]})`);
+  await seenPost({ "MOC-001": 1, "PHA-007": 4, "SIC-001": 1 });
+  s1 = await getState();
+  ok(s1.seen["MOC-001"] === 2, `a lower count never lowers stored exposure (MOC-001=${s1.seen["MOC-001"]})`);
+  ok(s1.seen["PHA-007"] === 4 && s1.seen["SIC-001"] === 1, "a higher count wins and new qids are added");
+  const junk = await fetch(B+"/api/track", {method:"POST",
+    headers:{"Content-Type":"application/json", Authorization:"Bearer "+TOK},
+    body:JSON.stringify({seen:{ "not-a-string": 1, [ "x".repeat(200) ]: 1, "MOC-002": "3" }})}).then(r=>r.status);
+  ok(junk === 200, "malformed seen entries are accepted but ignored");
+  s1 = await getState();
+  ok(s1.seen["MOC-002"] === 3 && Object.keys(s1.seen).every(k=>k.length <= 64),
+     "numeric strings coerce; oversized keys dropped");
+  // and the sim path takes the same hint without tripping validation
+  const simHint = await j("/api/sim/start", {examId:"rn-preview-sim", seen:["MOC-001","PHA-007", 42, null, "y".repeat(300)]});
+  ok(simHint.status === 200 && simHint.data.simId, "sim/start tolerates a messy seen hint");
+}
+
 let noauth = await fetch(B+"/api/state"); ok(noauth.status===401, "state requires auth");
 let lo = await fetch(B+"/api/auth/logout", {method:"POST", headers:{Authorization:"Bearer "+TOK}});
 ok(lo.status===200, "logout ok");
@@ -279,6 +307,23 @@ console.log("— authoring workflow (v3c) —");
   const multi = d.data.items.find(x=>x.t==="multi");
   ok(!multi || multi.options.every(o=>o.n<=multi.n), "multi option counts bounded by n");
 
+
+  console.log("— duplicate report (v3o) —");
+  const dnoKey = await fetch(B+"/api/admin/duplicates");
+  ok(dnoKey.status === 401, "duplicates endpoint requires an admin key");
+  const dups = await req("/api/admin/duplicates");
+  ok(dups.status === 200 && Array.isArray(dups.data.detail), "duplicate report returned");
+  ok(typeof dups.data.clusters === "number" && Array.isArray(dups.data.sameContent) && Array.isArray(dups.data.sharedStems),
+     "report separates same-content from shared-stem clusters");
+  ok(dups.data.detail.every(c => Array.isArray(c.ids) && c.ids.length >= 2 && typeof c.stem === "string"),
+     "every reported cluster lists its ids and a stem preview");
+  const health2 = await j("/api/health");
+  ok(typeof health2.data.duplicateClusters === "number" && typeof health2.data.duplicateItems === "number",
+     `health exposes the duplicate count (${health2.data.duplicateClusters} clusters / ${health2.data.duplicateItems} items)`);
+  ok(typeof health2.data.variantGroups === "number" && health2.data.variantGroups >= 11,
+     `authored variant groups are reported separately (${health2.data.variantGroups})`);
+  ok(health2.data.duplicateClusters === dups.data.clusters - health2.data.variantGroups,
+     "health and the admin report agree once authored variant groups are excluded");
 
   const adm = await fetch(B+"/admin");
   ok(adm.status===200 && (await adm.text()).includes("Authoring console"), "/admin serves the console");

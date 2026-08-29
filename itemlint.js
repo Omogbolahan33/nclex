@@ -81,6 +81,41 @@ function lintItem(q){
   return flags;
 }
 
+/* ── cross-item duplicate scan ────────────────────────────────────────────
+   The same question under two ids (a re-seeded row, a re-imported document)
+   is what makes an examinee see one question several times in an exam: every
+   selection rule is keyed on id. `duplicateClusters` reports those, plus
+   items that share a stem (item sets — legitimate on paper, but they read as
+   a repeat when both land in one sitting). The engine links them into one
+   constraint group at runtime; this is the report + the gate.             */
+function duplicateClusters(items){
+  const norm = v => String(v==null?"":v).toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+  const presented = q => {
+    const p = [String(q.stem||"")];
+    if (Array.isArray(q.opts)) q.opts.forEach(o=>p.push(String(o)));
+    if (q.groups) q.groups.forEach(g=>{ p.push(String(g.q||g.prompt||"")); (g.opts||[]).forEach(o=>p.push(String(o))); });
+    if (q.drag){ (q.drag.targets||[]).forEach(t=>p.push(String(t))); (q.drag.opts||[]).forEach(o=>p.push(String(o))); }
+    if (q.cloze) q.cloze.lines.forEach(l=>{ p.push(String(l.text||l.prompt||"")); (l.opts||[]).forEach(o=>p.push(String(o))); });
+    if (q.hotspot){ p.push(String(q.hotspot.mode||"")); (q.hotspot.rows||[]).forEach(r=>p.push(String(r))); }
+    if (q.matrix){ p.push(String(q.matrix.mode||"")); (q.matrix.cols||[]).forEach(c=>p.push(String(c))); (q.matrix.rows||[]).forEach(r=>p.push(String(r))); }
+    return p.join("\u0001");
+  };
+  const byContent = new Map(), byStem = new Map();
+  (items||[]).forEach(q=>{
+    if (!q || !q.id) return;
+    const c = norm(presented(q)), s2 = norm(q.stem);
+    if (c){ if (!byContent.has(c)) byContent.set(c,[]); byContent.get(c).push(q.id); }
+    if (s2){ if (!byStem.has(s2)) byStem.set(s2,[]); byStem.get(s2).push(q.id); }
+  });
+  const sameContent = [...byContent.values()].filter(v=>v.length>1);
+  const sharedStem  = [...byStem.values()].filter(v=>v.length>1)
+    .filter(v=>!sameContent.some(c=>c.length===v.length && c.every((x,i)=>x===v[i])));
+  return { sameContent, sharedStem,
+    exactCount: sameContent.length,
+    stemCount: sharedStem.length,
+    affected: new Set([...sameContent, ...sharedStem].flat()).size };
+}
+
 function lint(items){
   const out = [];
   (items||[]).forEach(q=>{
@@ -93,7 +128,8 @@ function lint(items){
   return { items:out, hard, soft, hardCount:hard.length };
 }
 
-module.exports = { lint, lintItem, HARD:new Set(["stem-cue","absolute","double-negative","dup-options","rat-coverage","opt-parity"]) };
+module.exports = { lint, lintItem, duplicateClusters,
+                   HARD:new Set(["stem-cue","absolute","double-negative","dup-options","rat-coverage","opt-parity"]) };
 
 /* CLI */
 if (require.main === module){
@@ -104,7 +140,9 @@ if (require.main === module){
     .forEach(f=>vm.runInContext(fs.readFileSync(path.join(__dirname,f),"utf8"),ctx,{filename:f}));
   const NC=ctx.window.NC; vm.runInContext("NC.load()",ctx);
   const r = lint(NC.allItems());
-  console.log(`itemlint: ${NC.allItems().length} items · ${r.hardCount} HARD flags · ${r.soft.length} items with soft warnings\n`);
+  const dup = module.exports.duplicateClusters(NC.BANK);
+  console.log(`itemlint: ${NC.allItems().length} items · ${r.hardCount} HARD flags · ${r.soft.length} items with soft warnings`);
+  console.log(`duplicate scan: ${dup.exactCount} same-content cluster(s), ${dup.stemCount} shared-stem cluster(s), ${dup.affected} item(s) affected\n`);
   if (r.hard.length){
     console.log("— HARD (must fix) —");
     r.hard.forEach(x=>console.log(`  ${x.id} [${x.t}]  ${x.flags.filter(f=>module.exports.HARD.has(f[0])).map(f=>f[0]+": "+f[1]).join(" | ")}`));
@@ -113,5 +151,15 @@ if (require.main === module){
     console.log("\n— soft (review) —");
     r.soft.slice(0,25).forEach(x=>console.log(`  ${x.id}  ${x.flags.map(f=>f[0]).join(",")}`));
   }
-  process.exit(r.hardCount ? 1 : 0);
+  if (dup.sameContent.length){
+    console.log("\n— DUPLICATE CONTENT (same question under several ids — never co-served at runtime) —");
+    dup.sameContent.forEach(ids=>console.log("  " + ids.join(" = ") + "  || " +
+      String((NC.BANK.find(q=>q.id===ids[0])||{}).stem||"").slice(0,100)));
+  }
+  if (dup.sharedStem.length){
+    console.log("\n— SHARED STEM (item set: at most one member per exam) —");
+    dup.sharedStem.forEach(ids=>console.log("  " + ids.join(" ~ ") + "  || " +
+      String((NC.BANK.find(q=>q.id===ids[0])||{}).stem||"").slice(0,100)));
+  }
+  process.exit((r.hardCount || dup.exactCount) ? 1 : 0);
 }

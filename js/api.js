@@ -104,11 +104,20 @@ NC.api = {
       .then(r=>{ if(!r.ok) throw new Error("state "+r.status); return r.json(); }); },
 
   /* simulation (server-side CAT) */
-  simStart(examId){ return this.post("/api/sim/start", {examId}); },
+  /* Exposure history travels with the request: the server is not authenticated
+     for sims, so this is how a returning candidate gets NEW items first instead
+     of meeting questions they answered last week. Capped — it is a hint.     */
+  seenHint(){
+    try {
+      const seen = (NC.load && NC.load().seen) || {};
+      return Object.keys(seen).slice(-5000);
+    } catch(e){ return []; }
+  },
+  simStart(examId){ return this.post("/api/sim/start", {examId, seen:this.seenHint()}); },
   simNext(simId){
     const sim = typeof NC !== "undefined" && NC.getSim && NC.getSim(simId);
     const remainingMs = sim ? (sim.remainingMs || Math.max(0, sim.endsAt - Date.now())) : null;
-    return this.post("/api/sim/next", {simId, remainingMs});
+    return this.post("/api/sim/next", {simId, remainingMs, seen:this.seenHint()});
   },
   simAnswer(simId, qid, ans, timeMs){ return this.post("/api/sim/answer", {simId, qid, ans, timeMs}); },
   simCaseAnswer(simId, caseId, step, ans, timeMs){ return this.post("/api/sim/case-answer", {simId, caseId, step, ans, timeMs}); },

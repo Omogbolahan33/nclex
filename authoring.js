@@ -122,6 +122,42 @@ function validateItem(q, NC){
   return errs;
 }
 
+/* ── duplicate content guard (v3o) ────────────────────────────────────────
+   A new draft that repeats a question already in the bank (same stem + same
+   presented options, or just the same stem) is how a database ends up with the
+   same question under several ids — and how examinees see one question five
+   times in a single exam. Publishing it is blocked with the id of the item it
+   collides with, so the author either merges the change into that item or
+   deliberately makes it a `variantGroup` sibling. The engine separately links
+   whatever duplicates already exist, so nothing can be co-served.          */
+const normTxt = v => String(v==null?"":v).toLowerCase()
+  .replace(/[\u2018\u2019]/g,"'").replace(/[\u201C\u201D]/g,'"')
+  .replace(/[^a-z0-9]+/g," ").trim();
+function presented(q){
+  const p = [String(q.stem||"")];
+  if (Array.isArray(q.opts)) q.opts.forEach(o=>p.push(String(o)));
+  if (q.groups) q.groups.forEach(g=>{ p.push(String(g.q||g.prompt||"")); (g.opts||[]).forEach(o=>p.push(String(o))); });
+  if (q.drag){ (q.drag.targets||[]).forEach(t=>p.push(String(t))); (q.drag.opts||[]).forEach(o=>p.push(String(o))); }
+  if (q.cloze) q.cloze.lines.forEach(l=>{ p.push(String(l.text||l.prompt||"")); (l.opts||[]).forEach(o=>p.push(String(o))); });
+  if (q.hotspot){ p.push(String(q.hotspot.mode||"")); (q.hotspot.rows||[]).forEach(r=>p.push(String(r))); }
+  if (q.matrix){ p.push(String(q.matrix.mode||"")); (q.matrix.cols||[]).forEach(c=>p.push(String(c))); (q.matrix.rows||[]).forEach(r=>p.push(String(r))); }
+  return p.join("\u0001");
+}
+/* → { id, kind } of the first bank item this draft repeats, or null */
+function duplicateOf(NC, item, exceptId){
+  if (!item || typeof item !== "object" || !item.stem) return null;
+  const fp = normTxt(presented(item)), st = normTxt(item.stem);
+  for (const q of (NC.BANK||[])){
+    if (!q || q.id === exceptId) continue;
+    if (normTxt(presented(q)) === fp) return { id:q.id, kind:"same-content" };
+  }
+  for (const q of (NC.BANK||[])){
+    if (!q || q.id === exceptId) continue;
+    if (normTxt(q.stem) === st) return { id:q.id, kind:"same-stem" };
+  }
+  return null;
+}
+
 /* ── records ── */
 const now = () => Date.now();
 function ensureState(D){
@@ -142,6 +178,9 @@ function createDraft(NC, D, item, note, by){
   const prior = D.authoring[item.id];
   const clash = NC.allItems().some(q=>q.id===item.id);
   if (clash && !prior) return { errors:["id already in bank — use it to open a change-draft or pick a new id"] };
+  const dup = duplicateOf(NC, item, item.id);
+  if (dup) return { errors:[`duplicates ${dup.id} (${dup.kind}) — edit that item instead, or give this one a ` +
+                           `variantGroup so the two are served as alternates, never together`] };
   const rec = prior || { qid: item.id, status:"draft", version: 0, history: [], created: now() };
   const reopened = rec.status === "published";
   rec.status = "draft";
@@ -164,6 +203,9 @@ function updateDraft(NC, D, qid, item, note, by){
   if (errs.length) return { errors: errs };
   if (item.id !== qid) return { errors:["id cannot change while in review cycle"] };
   if (!can(by, "edit")) return { forbidden:true, errors:[`role '${actorOf(by).role}' cannot edit drafts (needs author/editor/admin)`] };
+  const dup = duplicateOf(NC, item, qid);
+  if (dup) return { errors:[`duplicates ${dup.id} (${dup.kind}) — edit that item instead, or give this one a ` +
+                           `variantGroup so the two are served as alternates, never together`] };
   rec.draft = item; rec.by = actorOf(by).name; rec.updated = now();
   rec.history.push({ version: rec.version, ts: now(), event:"edited", note: note || "draft updated" });
   return { record: rec };
@@ -193,6 +235,9 @@ function transition(NC, D, qid, to, note, by){
   if (to === "published"){
     const errs = validateItem(rec.draft, NC);
     if (errs.length) return { errors:["cannot publish an invalid item: "+errs[0]] };
+    const dup = duplicateOf(NC, rec.draft, qid);
+    if (dup) return { errors:[`cannot publish: duplicates ${dup.id} (${dup.kind}) — retire that item first, ` +
+                              `or set a shared variantGroup so they alternate instead of repeating`] };
     const existing = NC.BANK.find(q=>q.id===qid);
     if (existing) rec.history.push({ version: rec.version, ts, event:"published-over", note: note||"", snapshot: existing });
     else if (NC.CASES.some(c=>c.items.some(i=>i.id===qid))) return { errors:["qid collides with a case-study item"] };
@@ -230,7 +275,21 @@ function importDrafts(NC, D, items, note, by){
     if (r.errors) errors.push({ index:i, id: item && item.id, errors: r.errors });
     else created.push(item.id);
   });
-  return { created, errors };
+  // a second copy INSIDE the batch is a duplicate too (createDraft only sees the bank)
+  const seenFp = new Map(), seenStem = new Map(), dropped = [];
+  for (let i=0;i<created.length;i++){
+    const id = created[i], item = (Array.isArray(items)?items:[]).find(x=>x && x.id===id);
+    if (!item) continue;
+    const fp = normTxt(presented(item)), st = normTxt(item.stem);
+    const clashWith = seenFp.get(fp) || seenStem.get(st);
+    if (clashWith){
+      dropped.push({ index: items.indexOf(item), id, errors:[`duplicates ${clashWith} inside this import — skipped`] });
+      const rec = D.authoring[id]; if (rec) delete D.authoring[id];
+      created.splice(i,1); i--; continue;
+    }
+    seenFp.set(fp, id); seenStem.set(st, id);
+  }
+  return { created, errors: errors.concat(dropped) };
 }
 
 /* full-fidelity export (includes keys — admin/trusted only) */
@@ -271,5 +330,5 @@ function queueSummary(D){
                  t:r.draft?.t, updated:r.updated, by:r.by, histories:r.history.length }));
 }
 
-module.exports = { STATUSES, TRANSITIONS, ROLES, ACTIONS, can, validateItem, createDraft, updateDraft, transition,
-                   importDrafts, exportAll, applyPatches, queueSummary, getRecord, ID_RE };
+module.exports = { STATUSES, TRANSITIONS, ROLES, ACTIONS, can, validateItem, duplicateOf, createDraft, updateDraft,
+                   transition, importDrafts, exportAll, applyPatches, queueSummary, getRecord, ID_RE };

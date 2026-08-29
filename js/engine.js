@@ -144,27 +144,166 @@ const shuffle = a => { a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.
    Rules: (1) never serve two members of one group in the same exam/session;
           (2) when re-testing a concept, rotate to the least-exposed member.   */
 const seenCount = qid => (S().seen[qid]||0);
+NC.exposure = qid => seenCount(qid);
+
+/* ── duplicate content detection ──────────────────────────────────────────
+   A bank (especially one seeded/imported into a database) can hold the same
+   question more than once under DIFFERENT ids, and item sets can share one
+   stem. qid-based exclusion alone serves those side by side, and an examinee
+   reads that as "the same question twice" — up to once per copy per exam.
+   So duplicate clusters are treated exactly like variant groups: one member
+   per exam/session, rotating to the least-exposed member on a re-test.
+   Nothing is deleted — old responses, stats and the authoring history keep
+   resolving — the extra copies are simply never co-served.
+
+   Two clustering signals, unioned together (an item can be in both):
+     content  stem + every presented option/row/line matches (true duplicate)
+     stem     the normalized stem matches (shared-stem set: reads as a repeat)
+   Explicit `variantGroup` edges join the same structure, so an item that both
+   belongs to a variant group and duplicates another item merges into ONE
+   constraint group instead of two half-enforced ones.                      */
+const normText = s => String(s==null?"":s).toLowerCase()
+  .replace(/[\u2018\u2019]/g,"'").replace(/[\u201C\u201D]/g,'"')
+  .replace(/[^a-z0-9]+/g," ").trim();
+function presentedParts(q){           // only what the examinee is shown (no keys)
+  const p = [String(q.stem||"")];
+  if (Array.isArray(q.opts)) q.opts.forEach(o=>p.push(String(o)));
+  if (q.groups) q.groups.forEach(g=>{ p.push(String(g.q||g.prompt||"")); (g.opts||[]).forEach(o=>p.push(String(o))); });
+  if (q.drag){ (q.drag.targets||[]).forEach(t=>p.push(String(t))); (q.drag.opts||[]).forEach(o=>p.push(String(o))); }
+  if (q.cloze) q.cloze.lines.forEach(l=>{ p.push(String(l.text||l.prompt||"")); (l.opts||[]).forEach(o=>p.push(String(o))); });
+  if (q.hotspot){ p.push(String(q.hotspot.mode||"")); (q.hotspot.rows||[]).forEach(r=>p.push(String(r))); }
+  if (q.matrix){ p.push(String(q.matrix.mode||"")); (q.matrix.cols||[]).forEach(c=>p.push(String(c))); (q.matrix.rows||[]).forEach(r=>p.push(String(r))); }
+  return p.join("\u0001");
+}
+NC.itemFingerprint = q => q && q.id ? normText(presentedParts(q)) : "";
+NC.stemFingerprint = q => q && q.id ? normText(q.stem) : "";
+
+/* union-find over item ids + signal keys */
+function unionFind(){
+  const parent = Object.create(null);
+  const find = x => { parent[x] = parent[x] || x; let r = x; while (parent[r] !== r) r = parent[r];
+    while (parent[x] !== r){ const nx = parent[x]; parent[x] = r; x = nx; } return r; };
+  const union = (a,b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  return { find, union };
+}
+let DUP = null, DUP_SIG = "";
+function bankSignature(){
+  const b = NC.BANK || [];
+  let len = 0; for (const q of b) len += String(q && q.stem || "").length;
+  return b.length + ":" + ((b[0]||{}).id||"") + ":" + ((b[b.length-1]||{}).id||"") + ":" + len;
+}
+/* → { byId:{qid:groupId}, clusters:[{id, ids, reasons}], exact:[[ids]], stems:[[ids]] } */
+NC.duplicateIndex = function(force){
+  const sig = bankSignature();
+  if (!force && DUP && DUP_SIG === sig) return DUP;
+  const uf = unionFind(), byContent = new Map(), byStem = new Map();
+  const exact = [], stems = [];
+  (NC.BANK||[]).forEach(q=>{
+    if (!q || !q.id) return;
+    uf.find("q:"+q.id);
+    if (q.variantGroup) uf.union("q:"+q.id, "vg:"+q.variantGroup);
+    const c = NC.itemFingerprint(q);
+    if (c){ if (!byContent.has(c)) byContent.set(c, []); byContent.get(c).push(q.id); uf.union("q:"+q.id, "c:"+c); }
+    const s = NC.stemFingerprint(q);
+    if (s){ if (!byStem.has(s)) byStem.set(s, []); byStem.get(s).push(q.id); uf.union("q:"+q.id, "s:"+s); }
+  });
+  byContent.forEach(ids=>{ if (ids.length>1) exact.push(ids.slice()); });
+  byStem.forEach(ids=>{ if (ids.length>1) stems.push(ids.slice()); });
+  const members = Object.create(null), why = Object.create(null);
+  (NC.BANK||[]).forEach(q=>{
+    if (!q || !q.id) return;
+    const root = uf.find("q:"+q.id);
+    (members[root] = members[root] || []).push(q.id);
+    if (q.variantGroup) (why[root] = why[root] || []).push("variantGroup:"+q.variantGroup);
+  });
+  const clusters = [], byId = Object.create(null);
+  exact.forEach(ids=>ids.forEach(id=>{ const r = uf.find("q:"+id); (why[r] = why[r] || []).push("same-content"); }));
+  stems.forEach(ids=>ids.forEach(id=>{ const r = uf.find("q:"+id); (why[r] = why[r] || []).push("same-stem"); }));
+  Object.keys(members).forEach(root=>{
+    const ids = members[root];
+    if (ids.length < 2) return;                     // singletons carry no constraint
+    const gid = "grp:"+root;
+    ids.forEach(id=>{ byId[id] = gid; });
+    clusters.push({ id:gid, ids:ids.slice().sort(),
+      reasons:[...new Set(why[root]||[])],
+      explicit:(why[root]||[]).some(r=>r.indexOf("variantGroup:")===0) });
+  });
+  DUP = { byId, clusters,
+    exact: exact.sort((a,b)=>a[0].localeCompare(b[0])),
+    stems: stems.sort((a,b)=>a[0].localeCompare(b[0])) };
+  DUP_SIG = sig;
+  return DUP;
+};
+/* the constraint group an item belongs to (explicit variantGroup OR a
+   duplicate cluster, already unioned together) — null when unconstrained.
+   Always resolved through the index: an item can belong to a variant group AND
+   duplicate another item, and both must land in ONE group id.               */
+NC.groupOf = function(q){
+  if (!q || !q.id) return null;
+  return NC.duplicateIndex().byId[q.id] || null;
+};
+/* Rebuild after the bank changes underneath us (database overlay, authoring
+   patch, remote bootstrap). Returns a report the server logs / health exposes. */
+NC.linkDuplicates = function(){
+  const idx = NC.duplicateIndex(true);
+  // `duplicates` counts only content the bank did not mean to repeat; the
+  // authored variant groups are a deliberate alternates mechanism, not dupes.
+  const dupes = idx.clusters.filter(c=>!c.explicit);
+  return { clusters: idx.clusters.length,
+    duplicateItems: idx.clusters.reduce((a,c)=>a+c.ids.length,0),
+    duplicates: dupes.length,
+    duplicateContentItems: dupes.reduce((a,c)=>a+c.ids.length,0),
+    exact: idx.exact.length, sharedStems: idx.stems.length,
+    detail: idx.clusters.map(c=>({ ids:c.ids, reasons:c.reasons, explicit:!!c.explicit })) };
+};
 NC.variantGroups = function(){
   const g = {};
-  NC.allItems().forEach(q=>{ if (q.variantGroup) (g[q.variantGroup] ||= []).push(q.id); });
+  NC.allItems().forEach(q=>{ const gid = NC.groupOf(q); if (gid) (g[gid] ||= []).push(q.id); });
   return g;
 };
 /* within a shuffled pool, order same-group items least-exposed first (stable) */
-const freshestFirst = arr => arr.sort((a,b)=>
-  (a.variantGroup && a.variantGroup===b.variantGroup) ? seenCount(a.id)-seenCount(b.id) : 0);
-NC.pickItems = function(f, count){
-  let pool = NC.filterItems(f);
-  if (pool.length < count && f.excludeSeen) pool = NC.filterItems({...f, excludeSeen:false});
-  const shuffled = freshestFirst(shuffle(pool));
+const freshestFirst = arr => arr.sort((a,b)=>{
+  const ga = NC.groupOf(a), gb = NC.groupOf(b);
+  return (ga && ga===gb) ? seenCount(a.id)-seenCount(b.id) : 0;
+});
+/* shuffle, then stable-sort by lifetime exposure: never-seen items first,
+   then once-seen, … Ties keep the random order. This is what makes "practice
+   again" hand out NEW items instead of recycling the ones already answered. */
+const leastSeenFirst = arr => shuffle(arr).sort((a,b)=> seenCount(a.id)-seenCount(b.id));
+/* take up to `count` items from a shuffled pool, at most one per constraint group */
+function takeGrouped(shuffled, count){
   const out=[], usedG=new Set();
   for (const q of shuffled){
     if (out.length>=count) break;
-    if (q.variantGroup && usedG.has(q.variantGroup)) continue;   // one per group — hard rule
-    out.push(q); if (q.variantGroup) usedG.add(q.variantGroup);
+    const g = NC.groupOf(q);
+    if (g && usedG.has(g)) continue;   // one per group — hard rule
+    out.push(q); if (g) usedG.add(g);
+  }
+  return out;
+}
+NC.pickItems = function(f, count){
+  f = f || {};
+  const fresh = NC.filterItems(f);              // excludeSeen honoured when asked
+  const out = takeGrouped(leastSeenFirst(fresh), count);
+  /* Short of the request only when the UNSEEN pool cannot supply it. Recycling
+     is then explicit: least-exposed first, and never a concept already in this
+     pick. Callers can compare against NC.freshCount(f) to tell the user.     */
+  if (out.length < count && f.excludeSeen){
+    const have = new Set(out.map(q=>q.id));
+    const usedG = new Set(out.map(q=>NC.groupOf(q)).filter(Boolean));
+    const rest = leastSeenFirst(NC.filterItems({...f, excludeSeen:false}).filter(q=>!have.has(q.id)));
+    for (const q of rest){
+      if (out.length>=count) break;
+      const g = NC.groupOf(q);
+      if (g && usedG.has(g)) continue;
+      out.push(q); if (g) usedG.add(g);
+    }
   }
   return out; // may be < count when the pool cannot supply count without repeating a concept
 };
 NC.countFor = f => NC.filterItems(f).length;
+/* how many items matching `f` this user has NOT been served yet */
+NC.freshCount = f => NC.filterItems(Object.assign({}, f, { excludeSeen:true })).length;
 
 /* smart practice: weight areas by weakness (client need + difficulty targeting) */
 NC.smartPick = function(count){
@@ -176,14 +315,18 @@ NC.smartPick = function(count){
     const weakness = m && m.n >= 3 ? (1 - m.pct/100) : 0.55;      // unknown areas stay attractive
     const theta = S().theta;
     const info = NC.probCorrect(theta, NC.diffB(q));                // target ~50% success
-    const w = weakness * (0.5 + info) * Math.random();
+    // freshness: an item never served beats one already answered; a repeat
+    // decays with exposure so smart practice keeps reaching NEW material.
+    const fresh = 1/(1 + seenCount(q.id));
+    const w = weakness * (0.5 + info) * fresh * Math.random();
     return {q, w};
   }).sort((a,b)=>b.w-a.w);
   const out=[], used=new Set(), usedG=new Set();
   for (const x of weighted){
     if (out.length>=count) break;
     if (used.has(x.q.id)) continue;
-    if (x.q.variantGroup){ if (usedG.has(x.q.variantGroup)) continue; usedG.add(x.q.variantGroup); }
+    const g = NC.groupOf(x.q);
+    if (g){ if (usedG.has(g)) continue; usedG.add(g); }
     used.add(x.q.id); out.push(x.q);
   }
   return out;
@@ -294,8 +437,12 @@ NC.newSession = function(cfg){
   if (cfg.mode==="smart") items = NC.smartPick(cfg.count);
   else if (cfg.mode==="diagnostic") items = NC.diagnosticPick(cfg.count||30);
   else items = NC.pickItems(cfg.filters||{}, cfg.count);
+  // how much of this session is genuinely NEW for this candidate (the UI says
+  // so out loud instead of quietly recycling answered items)
+  const recycled = items.filter(q=>seenCount(q.id)>0).length;
   const s = { id, mode:cfg.mode, count:items.length, filters:cfg.filters||{}, timed:!!cfg.timed, secs:cfg.secs||null,
-    items:items.map(q=>q.id), idx:0, answers:{}, times:{}, startedTs:Date.now(), status:"open" };
+    items:items.map(q=>q.id), idx:0, answers:{}, times:{}, startedTs:Date.now(), status:"open",
+    fresh:items.length-recycled, recycled };
   S().sessions.push(s); NC.save();
   return s;
 };
@@ -359,6 +506,9 @@ NC.srsCheck = function(topic, avgScore){
 NC.trackPayload = function(){
   const st = S();
   return { responses: st.responses.slice(-400), srs: st.srs||{}, theta: st.theta, thetaN: st.thetaN,
+    // item-exposure counts ride along: without them a second device (or a
+    // cleared cache) starts from zero and re-serves everything already answered
+    seen: st.seen||{},
     profile:{ name:st.user.name, examDate:st.user.examDate, level:st.user.level, dailyMin:st.user.dailyMin, diagDone:st.user.diagDone } };
 };
 NC.mergeState = function(remote){
@@ -375,6 +525,12 @@ NC.mergeState = function(remote){
     st.srs = st.srs||{};
     Object.entries(remote.srs).forEach(([t,v])=>{ const cur=st.srs[t];
       if (!cur || (v.due||0) < (cur.due||0) || (v.hits||0) > (cur.hits||0)) st.srs[t]=v; });
+  }
+  if (remote.seen && typeof remote.seen==="object"){   // exposure history: keep the max
+    st.seen = st.seen||{};
+    Object.entries(remote.seen).forEach(([qid,n])=>{
+      const v = Number(n)||0; if (v > (st.seen[qid]||0)) st.seen[qid] = v;
+    });
   }
   if (typeof remote.theta==="number" && (remote.thetaN||0) > st.thetaN){ st.theta=remote.theta; st.thetaN=remote.thetaN; }
   if (remote.profile){
@@ -393,10 +549,11 @@ NC.diagnosticPick = function(count){
   const out=[], usedG=new Set();
   byD.forEach((arr,i)=>{
     let n = Math.max(0,want[i]||0);
-    for (const q of freshestFirst(shuffle(arr))){
+    for (const q of leastSeenFirst(arr)){          // new material first
       if (n<=0) break;
-      if (q.variantGroup && usedG.has(q.variantGroup)) continue; // one per group
-      out.push(q); if (q.variantGroup) usedG.add(q.variantGroup); n--;
+      const g = NC.groupOf(q);
+      if (g && usedG.has(g)) continue;             // one per group
+      out.push(q); if (g) usedG.add(g); n--;
     }
   });
   return shuffle(out).slice(0,count); // one per variant group — hard rule; may return < count
@@ -421,7 +578,33 @@ function pretestSlots(sim){
   if (at && typeof at.has === "function") return (sim.pretestAt = [...at]); // live Set
   return (sim.pretestAt = planPretestAt(sim.cfg || NC.EXAMS[sim.examId]));
 }
-NC.newSim = function(examId){
+/* ── per-candidate "already answered" set ────────────────────────────────
+   The browser knows what this device has been served; the server is handed the
+   same list with each request (sims are not authenticated). It is stored on the
+   sim so a resumed exam keeps avoiding the same items, and capped so a long
+   history cannot bloat the persisted sim document. Selection treats it as a
+   soft preference: new material first, repeats only when nothing else is left. */
+const AVOID_MAX = 5000;
+const AVOID_CACHE = typeof WeakMap === "function" ? new WeakMap() : null;
+NC.simAvoid = function(sim, add){
+  if (Array.isArray(add) && add.length){
+    const have = new Set(Array.isArray(sim.avoid) ? sim.avoid : []);
+    let grew = false;
+    for (const qid of add){ if (typeof qid === "string" && !have.has(qid)){ have.add(qid); grew = true; } }
+    if (grew) sim.avoid = [...have].slice(-AVOID_MAX);
+  }
+  if (!Array.isArray(sim.avoid) || !sim.avoid.length) return new Set();
+  if (AVOID_CACHE){
+    const hit = AVOID_CACHE.get(sim);
+    if (hit && hit.len === sim.avoid.length) return hit.set;
+    const set = new Set(sim.avoid);
+    AVOID_CACHE.set(sim, { len:sim.avoid.length, set });
+    return set;
+  }
+  return new Set(sim.avoid);
+};
+
+NC.newSim = function(examId, opts){
   const cfg = NC.EXAMS[examId];
   const st = S();
   const seenPool = NC.allItems();
@@ -440,14 +623,16 @@ NC.newSim = function(examId){
     administered:[], // {qid, b, pretest, caseId?}
     counts:{}, caseSlots, caseIds:cases.map(c=>c.id), casesDone:0, pretestDone:0, pretestAt,
     startedTs:Date.now(), endsAt:Date.now()+cfg.durationMinutes*60000,
-    remainingMs:cfg.durationMinutes*60000, status:"open", events:[] };
+    remainingMs:cfg.durationMinutes*60000, status:"open", events:[],
+    avoid:(opts && Array.isArray(opts.avoid)) ? opts.avoid.slice(-AVOID_MAX) : [] };
   st.sims.push(sim); NC.save();
   return sim;
 };
 NC.getSim = id => S().sims.find(x=>x.id===id);
 
-NC.simNext = function(sim){
+NC.simNext = function(sim, opts){
   sim.cfg = sim.cfg || (NC.EXAMS && NC.EXAMS[sim.examId]) || (NC.EXAMS && NC.EXAMS["nclex-rn-2026"]);
+  NC.simAvoid(sim, opts && opts.avoid);   // fold in this candidate's answered history
   // returns {kind:'item', item, pretest} | {kind:'case', case} | {kind:'done', reason, outcome}
   if (sim.status!=="open") return {kind:"done", reason:sim.stopReason, outcome:sim.outcome};
   // resume an item already served but not yet answered (e.g. after reload)
@@ -486,11 +671,25 @@ NC.simNext = function(sim){
     return {kind:"case", case:c};
   }
   // blueprint-constrained adaptive selection
-  // variant groups: exclude any group already served in THIS exam (one member per exam)
-  const usedGroups = new Set(sim.administered.map(a=>NC.item(a.qid)).filter(q=>q && q.variantGroup).map(q=>q.variantGroup));
-  const pool = NC.allItems().filter(q=>!q.caseId && !sim.administered.some(a=>a.qid===q.id)
-    && !(q.variantGroup && usedGroups.has(q.variantGroup)));
-  const fallback = pool.length ? pool : NC.allItems().filter(q=>!q.caseId); // reuse if exhausted (small pool)
+  // ── HARD no-repeat rule ────────────────────────────────────────────────
+  // An item is served AT MOST ONCE per exam: excluded by qid, by variant/duplicate
+  // group (so the same question under a second id, or a shared-stem sibling, can
+  // never follow it), and — see `avoided` below — never recycled to pad the exam
+  // out. There is deliberately NO full-bank fallback here: when nothing new is
+  // left the exam ends with stopReason "pool" instead of re-serving questions
+  // the candidate has already answered.
+  const usedIds = new Set(sim.administered.map(a=>a.qid));
+  const usedGroups = new Set();
+  sim.administered.forEach(a=>{ const g = NC.groupOf(NC.item(a.qid)); if (g) usedGroups.add(g); });
+  const eligible = NC.allItems().filter(q=>!q.caseId && !usedIds.has(q.id)
+    && !(NC.groupOf(q) && usedGroups.has(NC.groupOf(q))));
+  if (!eligible.length) return NC.simFinish(sim, "pool");
+  // freshness: items this candidate has already answered elsewhere are served
+  // LAST. `avoided` is a soft preference only — a small bank still completes,
+  // it just reaches for repeats once the new material runs out.
+  const avoided = NC.simAvoid(sim, opts && opts.avoid);
+  const pool = avoided.size ? eligible.filter(q=>!avoided.has(q.id)) : eligible;
+  const cands0 = pool.length ? pool : eligible;
   // blueprint weights: per-exam override (PN plans differ from RN), else taxonomy midpoints
   const bp = sim.cfg.blueprint;
   const mids = bp ? Object.keys(bp).map(id=>({id, mid:bp[id]/100}))
@@ -500,26 +699,29 @@ NC.simNext = function(sim){
   mids.forEach(m=>{
     const cur = (sim.counts[m.id]||0)/Math.max(1,total);
     const def = m.mid - cur + Math.random()*0.04;
-    const has = fallback.some(q=>q.cn===m.id);
+    const has = cands0.some(q=>q.cn===m.id);
     if (def > bestDef && has){ bestDef=def; best=m.id; }
   });
-  let cands = fallback.filter(q=>q.cn===best);
-  if (!cands.length) cands = fallback;
+  let cands = best==null ? cands0 : cands0.filter(q=>q.cn===best);
+  if (!cands.length) cands = cands0;
   // family affinity: exams declaring an examFamily prefer items authored for that
   // family whenever a genuine choice exists (untagged items are shared: they match all)
   if (sim.cfg.examFamily){
     const famCands = cands.filter(q=>!q.fam || q.fam===sim.cfg.examFamily);
     if (famCands.length>=2) cands = famCands;
   }
+  if (!cands.length) return NC.simFinish(sim, "pool");
   // randomesque with exposure control: top-5 by |b - theta|, least-exposed first
-  cands = cands.map(q=>({q, d:Math.abs(NC.diffB(q)-sim.theta), ex:(S().seen[q.id]||0)}))
+  cands = cands.map(q=>({q, d:Math.abs(NC.diffB(q)-sim.theta), ex:seenCount(q.id)}))
               .sort((a,b)=>a.d-b.d).slice(0,5)
               .sort((a,b)=>(a.ex-b.ex)||(a.d-b.d));
   let pick = cands[0].q;
-  // anti-memorization rotation: if the chosen item has a same-group sibling in the pool
-  // with strictly lower lifetime exposure, serve the fresher one instead
-  if (pick.variantGroup){
-    const sibs = fallback.filter(q=>q.variantGroup===pick.variantGroup && q.id!==pick.id);
+  // anti-memorization rotation: if the chosen item has a same-group sibling still
+  // eligible for THIS exam with strictly lower lifetime exposure, serve the
+  // fresher one. Drawn from cands0 only — never from an already-served item.
+  const pickGroup = NC.groupOf(pick);
+  if (pickGroup){
+    const sibs = cands0.filter(q=>NC.groupOf(q)===pickGroup && q.id!==pick.id);
     for (const s of sibs){ if (seenCount(s.id) < seenCount(pick.id)){ pick = s; break; } }
   }
   const stv = S(); stv.seen[pick.id] = (stv.seen[pick.id]||0)+1;
@@ -564,7 +766,7 @@ NC.simCaseItemAnswered = function(sim, caseObj, step, ans, timeMs){
 };
 NC.simFinish = function(sim, reason, outcome){
   sim.cfg = sim.cfg || (NC.EXAMS && NC.EXAMS[sim.examId]) || (NC.EXAMS && NC.EXAMS["nclex-rn-2026"]);
-  if (reason==="max" || reason==="time"){
+  if (reason==="max" || reason==="time" || reason==="pool"){
     const se = NC.seAbility(sim.theta, sim.administered.filter(x=>x.scored));
     outcome = sim.theta - se*0.9 > sim.cfg.cut ? "above" : (sim.theta + se*0.9 < sim.cfg.cut ? "below" : "border");
   }

@@ -516,5 +516,151 @@ console.log("— author/reviewer roles (RBAC + separation of duties) —");
   ok(D.authoring["ZZZ-901"].history.some(h=>h.event==="admin-approve-note"), "admin self-approval is tagged in history");
 }
 
+console.log("— duplicate questions: never co-served, never repeated in one exam (v3o) —");
+{
+  const st0 = NC.load();
+  const bankBak = NC.BANK.slice(), casesBak = NC.CASES.slice(), seenBak = JSON.stringify(st0.seen);
+  st0.seen = {};
+
+  // (1) THE REPORTED BUG: a pool smaller than the exam used to recycle items —
+  //     the same question could be served 5, 10, 12 times in one sitting.
+  {
+    NC.BANK.length = 0; NC.BANK.push(...bankBak.slice(0,30));
+    NC.CASES.length = 0;
+    NC.linkDuplicates();
+    let worst = 0, poolStops = 0;
+    for (let run=0; run<5; run++){
+      const sim = NC.newSim("nclex-rn-2026");
+      const served = []; let guard = 0, done = null;
+      while (guard++ < 400){
+        const nxt = NC.simNext(sim);
+        if (nxt.kind === "done"){ done = nxt; break; }
+        served.push(nxt.item.id);
+        NC.simAnswer(sim, nxt.item, wrongAnsFor(nxt.item), 60000);
+      }
+      const tally = {}; served.forEach(id => tally[id] = (tally[id]||0)+1);
+      worst = Math.max(worst, ...Object.values(tally));
+      ok(new Set(served).size === served.length, `small pool: exam served each item once (run ${run}, ${served.length} items)`);
+      if (done && done.reason === "pool") poolStops++;
+    }
+    ok(worst === 1, `small pool: no item served twice across 5 exams (worst repeat ${worst})`);
+    ok(poolStops === 5, `small pool: exam ends with stopReason "pool" instead of recycling (${poolStops}/5)`);
+  }
+
+  // (2) same question under a second id + a shared-stem sibling
+  {
+    NC.BANK.length = 0; NC.BANK.push(...bankBak.slice(0,12).map(q=>({...q})));
+    const copy  = { ...bankBak[3], id:"DUP-001" };                       // same content, new id
+    const sib   = { ...bankBak[5], id:"DUP-002", ans:0 };                // same stem, other options
+    NC.BANK.push(copy, sib);
+    const rep = NC.linkDuplicates();
+    ok(rep.clusters >= 2, `duplicate index found the injected clusters (${rep.clusters})`);
+    ok(rep.exact >= 1 && rep.sharedStems >= 1, `report separates same-content (${rep.exact}) from shared-stem (${rep.sharedStems})`);
+    const g1 = NC.groupOf(NC.BANK.find(q=>q.id==="DUP-001"));
+    ok(!!g1 && g1 === NC.groupOf(bankBak[3]), "a re-seeded copy lands in the same constraint group as the original");
+    ok(NC.groupOf(bankBak[0]) == null || NC.groupOf(bankBak[0]) !== g1, "unrelated items stay unconstrained");
+    let coServed = 0, stemCo = 0, repeats = 0;
+    for (let run=0; run<25; run++){
+      const sim = NC.newSim("rn-preview-sim");
+      const served = []; let guard = 0;
+      while (guard++ < 200){
+        const nxt = NC.simNext(sim);
+        if (nxt.kind === "done") break;
+        served.push(nxt.item.id);
+        NC.simAnswer(sim, nxt.item, wrongAnsFor(nxt.item), 60000);
+      }
+      if (new Set(served).size !== served.length) repeats++;
+      if (served.includes("DUP-001") && served.includes(bankBak[3].id)) coServed++;
+      if (served.includes("DUP-002") && served.includes(bankBak[5].id)) stemCo++;
+    }
+    ok(repeats === 0, `no item served twice in 25 exams (${repeats})`);
+    ok(coServed === 0, `same question under two ids never co-served in one exam (${coServed})`);
+    ok(stemCo === 0, `shared-stem siblings never co-served in one exam (${stemCo})`);
+  }
+
+  // (3) practice picks obey the same rule
+  {
+    const picks = NC.pickItems({excludeSeen:false}, 12);
+    const ids = picks.map(q=>q.id);
+    ok(new Set(ids).size === ids.length, "pickItems never returns the same id twice");
+    ok(!(ids.includes("DUP-001") && ids.includes(bankBak[3].id)), "pickItems serves at most one copy of a duplicate");
+    ok(!(ids.includes("DUP-002") && ids.includes(bankBak[5].id)), "pickItems serves at most one shared-stem sibling");
+  }
+
+  NC.BANK.length = 0; NC.BANK.push(...bankBak);
+  NC.CASES.length = 0; NC.CASES.push(...casesBak);
+  NC.linkDuplicates();
+  st0.seen = JSON.parse(seenBak); NC.save();
+  const clean = NC.duplicateIndex(true);
+  // the repo bank's 11 authored variant groups are expected clusters; what must
+  // be zero is content the bank did not mean to repeat
+  ok(clean.exact.length === 0, `repo bank has no same-content duplicates (${clean.exact.length})`);
+  ok(clean.stems.length === 0, `repo bank has no shared-stem item sets (${clean.stems.length})`);
+  ok(clean.clusters.length === Object.keys(NC.variantGroups()).length,
+     `every remaining cluster is an authored variant group (${clean.clusters.length})`);
+}
+
+console.log("— freshness: answered items are not silently re-served (v3o) —");
+{
+  const st0 = NC.load(); const seenBak = JSON.stringify(st0.seen);
+  const pha = NC.filterItems({cn:["PHA"], excludeSeen:false});
+  st0.seen = {}; pha.slice(0, pha.length-3).forEach(q=>{ st0.seen[q.id] = 2; }); NC.save();
+
+  ok(NC.freshCount({cn:["PHA"]}) === 3, `freshCount reports only unseen items (${NC.freshCount({cn:["PHA"]})} of ${pha.length})`);
+  const first = NC.pickItems({cn:["PHA"], excludeSeen:true}, 3);
+  ok(first.every(q=>!seenBak || true) && first.every(q=>(JSON.parse(seenBak)[q.id]||0)===0),
+     `an exact-size request is filled with NEW items only (${first.map(q=>q.id).join(",")})`);
+  const short = NC.pickItems({cn:["PHA"], excludeSeen:true}, 6);
+  ok(short.length === 6, `an over-size request is still filled (${short.length})`);
+  ok(short.slice(0,3).every(q=>(JSON.parse(seenBak)[q.id]||0)===0), "new items come first; recycled ones fill the tail");
+  const s = NC.newSession({mode:"custom", count:6, filters:{cn:["PHA"], excludeSeen:true}});
+  ok(s.fresh === 3 && s.recycled === 3, `session records its own freshness split (fresh ${s.fresh}, recycled ${s.recycled})`);
+
+  // smart practice must reach for unseen material before repeating
+  st0.seen = {}; NC.filterItems({excludeSeen:false}).slice(0, NC.filterItems({excludeSeen:false}).length-40)
+    .forEach(q=>{ st0.seen[q.id] = 3; }); NC.save();
+  let newFirst = 0;
+  for (let i=0;i<12;i++) newFirst += NC.smartPick(10).filter(q=>!NC.load().seen[q.id]).length;
+  ok(newFirst >= 100, `smartPick prefers unseen items (${newFirst} of 120 picks were new)`);
+
+  // exposure history survives a sync round-trip (second device / cleared cache)
+  st0.seen = { "MOC-001": 2, "PHA-007": 1 };
+  const payload = NC.trackPayload();
+  ok(payload.seen && payload.seen["MOC-001"] === 2, "trackPayload carries the exposure history");
+  st0.seen = { "MOC-001": 5 };
+  NC.mergeState({ seen:{ "MOC-001":2, "PHA-007":4 } });
+  ok(NC.load().seen["MOC-001"] === 5 && NC.load().seen["PHA-007"] === 4,
+     `mergeState unions exposure by max (MOC-001=${NC.load().seen["MOC-001"]}, PHA-007=${NC.load().seen["PHA-007"]})`);
+
+  st0.seen = JSON.parse(seenBak); NC.save();
+}
+
+console.log("— authoring gate: a duplicate cannot enter the bank (v3o) —");
+{
+  const A = (await import("file://"+path.join(root,"authoring.js"))).default;
+  const D = { authoring:{}, bankPatches:{} };
+  const src = NC.BANK.find(q=>q.t==="single" && Array.isArray(q.opts));
+  const D2 = { authoring:{}, bankPatches:{} };
+  const base = { id:"ZZZ-950", t:"single", cn:src.cn, sys:src.sys, topic:src.topic, d:1, b:0.1, cj:"act",
+    tags:["x"], opts:["One option here","Two option here","Three option here","Four option here"], ans:1,
+    rat:{c:"correct because reasons","s":"strategy for this item"}, stem:src.stem };
+  const dupSame = A.createDraft(NC, D2, { ...base, stem:src.stem }, "re-import", "admin");
+  ok(!!dupSame.errors && /duplicates/.test(dupSame.errors[0]),
+     `a shared-stem draft is rejected (${(dupSame.errors||[])[0]||"accepted!"})`);
+  const copyOfLive = A.createDraft(NC, D2, { ...src, id:"ZZZ-951" }, "copy", "admin");
+  ok(!!copyOfLive.errors && /same-content/.test(copyOfLive.errors[0]),
+     `a verbatim copy of a live item is rejected (${(copyOfLive.errors||[])[0]||"accepted!"})`);
+  const fresh = A.createDraft(NC, D2, { ...base, stem:"A nurse is reviewing the laboratory results of a client receiving heparin therapy. Which finding requires the most immediate action by the nurse?",
+    opts:["Platelet count 88,000/mm3","Hemoglobin 13.8 g/dL","Sodium 139 mEq/L","Potassium 4.1 mEq/L"], ans:0 }, "new", "admin");
+  ok(fresh.record && fresh.record.status === "draft", "genuinely new content still drafts normally");
+  // and the same copy twice INSIDE one bulk import is caught
+  const bulk = A.importDrafts(NC, D2, [ { ...base, id:"ZZZ-960", stem:"Unique stem A for the bulk import probe question, long enough to validate.", opts:["A one","B two","C three","D four"], ans:0, rat:{c:"correct because","s":"strategy here"} },
+                                        { ...base, id:"ZZZ-961", stem:"Unique stem A for the bulk import probe question, long enough to validate.", opts:["A one","B two","C three","D four"], ans:0, rat:{c:"correct because","s":"strategy here"} } ], "bulk", "admin");
+  ok(bulk.created.length === 1 && bulk.errors.length === 1,
+     `bulk import keeps one copy and reports the other (created ${bulk.created.length}, errors ${bulk.errors.length})`);
+  ok(!D2.authoring["ZZZ-961"], "the rejected copy leaves no draft behind");
+  delete D2.authoring["ZZZ-960"];
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

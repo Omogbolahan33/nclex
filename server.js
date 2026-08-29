@@ -13,6 +13,7 @@ const store = require("./store");
 const calibrate = require("./calibrate");
 const authoring = require("./authoring.js");
 const ADMIN_KEY = process.env.ADMIN_KEY || "dev-admin"; // set ADMIN_KEY in production!
+let DUP_REPORT = { clusters:0, duplicates:0, duplicateContentItems:0, exact:0, sharedStems:0, detail:[] }; // filled by hydrate()
 
 /* ── DEMO_BANK switch (set it in the Render dashboard, e.g. DEMO_BANK=1) ──
    true  → the server serves ONLY the demo/practice question set (the 128
@@ -135,6 +136,22 @@ function hydrate(){ // links live engine refs to the persisted doc (re-runnable 
       console.log(`re-applied calibration: ${n} items on empirical difficulty (${new Date(D.calibration.generated).toISOString()})`);
     }
   }
+  /* ── duplicate content (v3o) ─────────────────────────────────────────────
+     A database-seeded or bulk-imported bank can hold the same question more
+     than once under different ids (and item sets can share a stem). Those are
+     linked into ONE constraint group at boot: selection then serves at most
+     one member per exam/session and rotates re-tests to the least-exposed
+     copy. Nothing is deleted — responses, stats and authoring history keep
+     resolving — but no exam can ever show the same question twice.
+     Report:  GET /api/admin/duplicates  ·  CLI:  npm run db:dedupe           */
+  DUP_REPORT = NC.linkDuplicates();
+  const realDupes = DUP_REPORT.detail.filter(c => !c.explicit);
+  if (realDupes.length){
+    console.log(`duplicate content linked: ${realDupes.length} cluster(s) covering ${DUP_REPORT.duplicateContentItems} items ` +
+                `(${DUP_REPORT.exact} same-content, ${DUP_REPORT.sharedStems} shared-stem) — one member per exam/session`);
+    realDupes.slice(0,8).forEach(c=>console.log(`  · ${c.ids.join(" = ")}  [${c.reasons.join(", ")}]`));
+    if (realDupes.length > 8) console.log(`  … ${realDupes.length-8} more cluster(s) — see GET /api/admin/duplicates`);
+  } else console.log(`no duplicate content in the bank (${DUP_REPORT.clusters} authored variant group(s) enforced as one-per-exam)`);
 }
 
 /* ── sanitizers: strip answer keys & rationales ── */
@@ -256,9 +273,19 @@ function mergeIntoUser(u, s){
     ["name","examDate","level","dailyMin","diagDone"].forEach(k=>{ if (s.profile[k]!=null) u.profile[k]=s.profile[k]; });
   }
   if (typeof s.theta==="number" && (s.thetaN||0) > (u.thetaN||0)){ u.theta=s.theta; u.thetaN=s.thetaN; }
+  if (s.seen && typeof s.seen==="object"){        // exposure history: keep the max
+    u.seen = u.seen || {};
+    Object.entries(s.seen).forEach(([qid,n])=>{
+      if (typeof qid !== "string" || qid.length > 64) return;
+      const v = Number(n)||0; if (v > (u.seen[qid]||0)) u.seen[qid] = v;
+    });
+  }
   store.save();
   return added;
 }
+
+/* client-supplied exposure history — validated + capped before it touches state */
+const seenHint = v => Array.isArray(v) ? v.filter(x=>typeof x==="string" && x.length<=64).slice(0,5000) : [];
 
 const simSummary = sim => ({
   outcome: sim.outcome, stopReason: sim.stopReason, theta: sim.theta,
@@ -306,6 +333,10 @@ const requestHandler = async (req,res)=>{
       return json(res,200,{ ok:true, uptime:Math.round(process.uptime()), items:NC.BANK.length,
         cases:NC.CASES.length, users:Object.keys(D.users).length,
         responseLog:D.responses.length, exposureTracked:Object.keys(D.seen||{}).length,
+        // duplicates found in the bank (authored variant groups counted separately)
+        duplicateClusters: DUP_REPORT.duplicates,
+        duplicateItems: DUP_REPORT.duplicateContentItems,
+        variantGroups: DUP_REPORT.clusters - DUP_REPORT.duplicates,
         calibrated: !!(D.calibration && D.calibration.items && D.calibration.items.length),
         // Question-source switch: true when the demo/practice set is being served
         // (DEMO_BANK=1|true|yes|on in the environment).
@@ -385,7 +416,9 @@ const requestHandler = async (req,res)=>{
       if (u === "/api/sim/start" && req.method==="POST"){
         const b = await body(req);
         if (!NC.EXAMS[b.examId]) return json(res,400,{error:"unknown exam"},req);
-        const sim = NC.newSim(b.examId);
+        // `seen` = qids this device has already been served. Selection treats it
+        // as a soft preference so a returning candidate gets NEW material first.
+        const sim = NC.newSim(b.examId, { avoid: seenHint(b.seen) });
         return json(res,200,{ simId:sim.id, examId:sim.examId }, req);
       }
       if (u === "/api/sim/next" && req.method==="POST"){
@@ -394,7 +427,7 @@ const requestHandler = async (req,res)=>{
         if (b.remainingMs && Date.now() > sim.endsAt) {
           sim.endsAt = Date.now() + b.remainingMs;
         }
-        const nxt = NC.simNext(sim);
+        const nxt = NC.simNext(sim, { avoid: seenHint(b.seen) });
         if (nxt.kind==="done")  return json(res,200,Object.assign({kind:"done"}, simSummary(sim)), req);
         if (nxt.kind==="case")  return json(res,200,{kind:"case", case:sanitizeCase(nxt.case), resumeAt:nxt.resumeAt||0}, req);
         sim.currentQid = nxt.item.id;
@@ -499,6 +532,20 @@ const requestHandler = async (req,res)=>{
         const responses = [...D.responses, ...Object.values(D.users).flatMap(x=>x.responses||[])];
         return json(res,200, calibrate.distractors(responses, NC.allItems()), req);
       }
+      if (u === "/api/admin/duplicates" && req.method==="GET"){
+        const actor = guard(req, res, "read"); if (!actor) return;
+        const idx = NC.duplicateIndex(true);
+        const stemOf = q => String((q&&q.stem)||"").slice(0,140);
+        return json(res,200,{
+          you:{ name:actor.name, role:actor.role },
+          clusters: idx.clusters.length,
+          items: idx.clusters.reduce((a,c)=>a+c.ids.length,0),
+          sameContent: idx.exact.map(ids=>({ ids, stem: stemOf(NC.BANK.find(q=>q.id===ids[0])) })),
+          sharedStems: idx.stems.map(ids=>({ ids, stem: stemOf(NC.BANK.find(q=>q.id===ids[0])) })),
+          detail: idx.clusters.map(c=>({ ids:c.ids, reasons:c.reasons, stem: stemOf(NC.BANK.find(q=>q.id===c.ids[0])) })),
+          note:"duplicates are linked into one constraint group — at most one member is served per exam/session; nothing is deleted"
+        }, req);
+      }
       if (u === "/api/admin/versions" && req.method==="GET"){
         const actor = guard(req, res, "read"); if (!actor) return;
         return json(res,200,{ versions: Object.values(D.authoring||{})
@@ -513,7 +560,7 @@ const requestHandler = async (req,res)=>{
       if (u === "/api/state"){
         if (!user) return json(res,401,{error:"not signed in"},req);
         return json(res,200,{ responses:user.responses, srs:user.srs||{}, profile:user.profile,
-          theta:user.theta, thetaN:user.thetaN }, req);
+          theta:user.theta, thetaN:user.thetaN, seen:user.seen||{} }, req);
       }
       return json(res,404,{error:"no such endpoint"},req);
     }

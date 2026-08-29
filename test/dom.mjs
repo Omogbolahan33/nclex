@@ -54,6 +54,36 @@ ok(/Priority weaknesses|Client Needs/.test(txt()), "profile bands shown");
 console.log("— tabs & practice hub —");
 await nav("#/practice"); ok(/Quick Practice/.test(txt()) && /Smart Practice/.test(txt()), "practice hub");
 await nav("#/custom"); ok(/Custom Practice/.test(txt()), "custom builder");
+ok(/items match — all new|new ·/.test(txt()), "custom builder states how much of the filter is new: " +
+   (window.document.getElementById("cf-match")||{}).textContent);
+console.log("— freshness honesty (no silent recycling) —");
+{
+  // mark almost the whole PHA pool as already answered, then rebuild the screen
+  const st = window.NC.load();
+  const pha = window.NC.filterItems({cn:["PHA"], excludeSeen:false});
+  pha.slice(0, pha.length-2).forEach(q=>{ st.seen[q.id] = 2; });
+  window.NC.save();
+  await nav("#/practice");
+  await nav("#/custom");
+  const seg = [...window.document.querySelectorAll('.seg[data-set="cn"] button')]
+    .find(b=>/Pharmacological/.test(b.textContent));
+  seg.dispatchEvent(new window.Event("click",{bubbles:true})); await after();
+  const line = window.document.getElementById("cf-match").textContent;
+  ok(/\b2 new\b/.test(line) && /50 already answered/.test(line),
+     `filter line reports new vs answered: "${line.trim()}"`);
+  ok(window.NC.freshCount({cn:["PHA"]}) === 2, "freshCount agrees with the rendered line");
+  // starting that session announces the split instead of hiding it
+  let toasted = "";
+  const realToast = window.NC.ui.toast;
+  window.NC.ui.toast = m => { toasted = String(m); };
+  await click('[data-act="cf-start"]');
+  window.NC.ui.toast = realToast;
+  ok(/new ·|answered all of these/.test(toasted), `session start states the split: "${toasted}"`);
+  const s = window.NC.getSession(window.location.hash.split("/").pop());
+  ok(s && s.recycled > 0 && s.fresh + s.recycled === s.items.length,
+     `session carries fresh=${s&&s.fresh} recycled=${s&&s.recycled}`);
+  st.seen = {}; window.NC.save();
+}
 await nav("#/browse/cn"); ok(/Management of Care/.test(txt()), "client-need browser");
 await nav("#/browse/type"); ok(/Matrix/.test(txt()), "type browser");
 await nav("#/cj"); ok(/Clinical Judgment/.test(txt()) && /unfolds/.test(txt()), "case hub");
