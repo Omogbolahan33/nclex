@@ -454,5 +454,45 @@ console.log("— premature simulation close: prompt to pick up exactly where sto
   ok(/Simulation Complete/.test(txt()), "navigates to simulation results upon abandon");
 }
 
+console.log("— sign-in merges exposure history even when local has more responses —");
+{
+  // The old login path merged only when the REMOTE had more responses, so a
+  // device that had practised offline never pulled its `seen` history and then
+  // re-served everything it had already answered. Stub the account API and
+  // drive the real acct-login action.
+  const st = window.NC.load();
+  const bak = { seen: JSON.stringify(st.seen), responses: JSON.stringify(st.responses) };
+  st.seen = {};
+  st.responses = [ {qid:"MOC-001", sid:"local-1", score:1, answered:true, ts:Date.now()},
+                   {qid:"MOC-002", sid:"local-1", score:0, answered:true, ts:Date.now()},
+                   {qid:"MOC-003", sid:"local-1", score:1, answered:true, ts:Date.now()} ];
+  window.NC.save();
+
+  const api = window.NC.api;
+  const saved = { login:api.login, state:api.state, track:api.track, setAuth:api.setAuth,
+                  account:api.account, token:api.token };
+  api.login   = async () => ({ token:"t-test", account:{ email:"t@x.com", name:"T" } });
+  api.setAuth = () => {};
+  api.track   = async () => ({ ok:true });
+  api.account = null;
+  // remote has FEWER responses than local — exactly the case that used to skip the merge
+  api.state   = async () => ({ responses:[ {qid:"MOC-001", sid:"remote-0", score:1, answered:true, ts:1} ],
+                               seen:{ "PHA-007":4, "SIC-001":1 }, theta:0.2, thetaN:3, profile:{} });
+
+  await nav("#/settings");
+  window.document.getElementById("ac-email").value = "t@x.com";
+  window.document.getElementById("ac-pass").value  = "password123";
+  await click('[data-act="acct-login"]');
+  await after(60);
+
+  const after2 = window.NC.load();
+  ok(after2.seen["PHA-007"] === 4 && after2.seen["SIC-001"] === 1,
+     `sign-in pulled the account's exposure history (PHA-007=${after2.seen["PHA-007"]}, SIC-001=${after2.seen["SIC-001"]})`);
+  ok(after2.responses.length >= 3, `local responses were not clobbered (${after2.responses.length})`);
+
+  Object.assign(api, saved);
+  st.seen = JSON.parse(bak.seen); st.responses = JSON.parse(bak.responses); window.NC.save();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

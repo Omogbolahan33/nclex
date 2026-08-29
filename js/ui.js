@@ -1487,7 +1487,12 @@ function settings(){
       const r = await NC.api.login(c.email, c.pass);
       NC.api.setAuth(r.token, r.account);
       const st = await NC.api.state();
-      if (st.responses && st.responses.length > NC.load().responses.length) NC.mergeState(st);
+      // Always merge, unconditionally. mergeState is a union (newer wins per
+      // sid+qid, exposure counts merged by max), so it never loses local work —
+      // and gating it on "remote has more responses" meant a device that had
+      // practised offline never received its `seen` history, then re-served
+      // every question it had already answered.
+      NC.mergeState(st);
       try{ await NC.api.track(NC.trackPayload()); }catch(_){}
       NC.ui.toast("Signed in — progress synced"); settings();
     }catch(e){ NC.ui.toast((e.body&&e.body.error) || "Sign-in failed"); }
