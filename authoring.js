@@ -16,7 +16,16 @@
      history:[{version, ts, event, note, snapshot?}] }
    D.bankPatches[qid] = {op:"set", item} | {op:"remove"}  → replayed at boot.   */
 
-const ID_RE = /^[A-Z]{2,4}-\d{3}$/;
+/* qid = 2–4 letters, hyphen, then 3 OR 4 digits.
+   Was `\d{3}` only, which capped the bank at 999 items per client-need prefix
+   (8 prefixes x 999 = 7,992 qids) — below any large-bank target. Allowing a
+   4th digit raises that to 8 x 9,999 = 79,992. Variable width is deliberate:
+   existing 3-digit qids (MOC-001) stay valid and unrenamed, so no migration,
+   no history rewrite, and every stored response/sim row keeps resolving.
+   Nothing parses the numeric part for meaning — the only readers are the
+   max-id scan in tools/draft-bank.mjs (regex `[0-9]+`, width-agnostic) and
+   deterministic report sorts, which stay deterministic at mixed widths.      */
+const ID_RE = /^[A-Z]{2,4}-\d{3,4}$/;
 const STATUSES = ["draft","review","approved","published","retired"];
 
 /* ── role-based access control (v3k): the authoring pipeline separates duties.
@@ -57,7 +66,7 @@ function validateItem(q, NC){
   const errs = [];
   const T = NC.TAX;
   if (!q || typeof q !== "object") return ["item must be an object"];
-  if (!q.id || typeof q.id !== "string" || !ID_RE.test(q.id)) errs.push("id must match ABC-123 (2–4 letters + 3 digits)");
+  if (!q.id || typeof q.id !== "string" || !ID_RE.test(q.id)) errs.push("id must match ABC-123 or ABC-1234 (2–4 letters + 3–4 digits)");
   if (typeof q.stem !== "string" || q.stem.length < 10) errs.push("stem too short (≥10 chars)");
   if (q.stem && q.stem.length > 2000) errs.push("stem too long (≤2000 chars)");
   if (!T.clientNeeds.some(c=>c.id===q.cn)) errs.push("cn must be one of: "+T.clientNeeds.map(c=>c.id).join(", "));

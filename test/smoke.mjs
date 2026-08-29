@@ -101,6 +101,15 @@ console.log("— authoring workflow (draft → review → approved → published
   // validation unit checks
   ok(A.validateItem(base,NC).length===0, "valid item passes");
   ok(A.validateItem({...base,id:"zz-9"},NC).some(e=>/id/.test(e)), "bad id rejected");
+  // qid width: 3 digits preserved for the existing bank, 4 now allowed.
+  // The old /\d{3}/ capped the bank at 999 per prefix (8 client-need prefixes
+  // x 999 = 7,992 qids) — below any large-bank target. 4 digits gives 79,992.
+  ok(A.validateItem({...base,id:"ZZZ-999"},NC).length===0, "3-digit qid still valid (back-compat)");
+  ok(A.validateItem({...base,id:"ZZZ-1000"},NC).length===0, "4-digit qid valid (ceiling lifted)");
+  ok(A.validateItem({...base,id:"ZZZ-9999"},NC).length===0, "4-digit qid at range top valid");
+  ok(A.validateItem({...base,id:"ZZZ-10000"},NC).some(e=>/id/.test(e)), "5-digit qid rejected");
+  const wide = A.createDraft(NC,D,{...base,id:"ZZZ-1001",stem:"Which action by the nurse is the priority for a four-digit qid item?"},"wide id");
+  ok(wide.record && wide.record.status==="draft", "4-digit qid draft created end-to-end");
   ok(A.validateItem({...base,cn:"XX"},NC).some(e=>/cn/.test(e)), "bad client need rejected");
   ok(A.validateItem({...base,t:"single",ans:7},NC).some(e=>/ans/.test(e)), "out-of-range key rejected");
   ok(A.validateItem({...base,t:"multi",opts:["a","b"],ans:[]},NC).length>0, "empty multi key rejected");
