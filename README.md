@@ -11,7 +11,7 @@ and answer keys that never leave the server.
 npm i jsdom            # once per environment (dev dependency for the DOM test)
 npm run build          # build standalone.html + public/ (key-free app)
 npm start              # exam server on :3000
-npm test               # engine/bank smoke (1960) + DOM (99) + admin (35) + store (36) + demo (1214)
+npm test               # engine/bank smoke (2144) + DOM (99) + admin (35) + store (36) + demo (1214)
 npm run test:api       # API/security/authoring/PWA/hardening suite (~140, CAT-length dependent) — needs `npm start` running
 npm run lint           # item-writing gate + duplicate-content scan of the bank
 npm run calibrate      # item calibration report from the response log (--apply to persist)
@@ -30,7 +30,7 @@ data/store.json  users · tokens · sims · response log (calibration feed)
 public/          the served client — contains NO bank files at all; PWA shell
                  (sw.js build-stamped cache, manifest, icon) — sw never touches
                  /api/item/…/full, /api/admin, auth or sims
-js/bank*.js      432 standalone items incl. 11 variantGroup sets (27 items), all
+js/bank*.js      456 standalone items incl. 11 variantGroup sets (27 items), all
                  7 item formats, full metadata + rationales (server-side only)
 js/case*.js      3 unfolding NCJMM case studies (18 items)
 js/engine.js     scoring · θ ability · blueprint CAT · stopping rules · SRS ·
@@ -63,14 +63,14 @@ store-pg.js      Postgres adapter v2 (PER-TABLE NORMALIZED): users · tokens ·
                  flush + automatic v1 document migration; identical interface; `npm i pg`
 schema.sql       Postgres DDL v2: normalized tables (users, tokens, responses,
                  sims, seen, authoring_records, bank_patches, meta) + v1 migration
-test/            smoke (1960) · dom (99) · admin (35) · store (36) · demo (1214) · api (~140, CAT-length dependent) — 3,480+ checks total
+test/            smoke (2144) · dom (99) · admin (35) · store (36) · demo (1214) · api (~140, CAT-length dependent) — 3,660+ checks total
 ```
 
 ## Feature set
 
 | Area | Details |
 |---|---|
-| **Content** | 432 standalone items + 6 NCJMM case studies (36 sub-items) = 468-item pool tracking the 2026 NCLEX-RN blueprint; 11 variant groups across 27 items; all 7 item formats in use; all 8 Client Needs; every item: rationale per option, NCLEX strategy, difficulty (label + numeric *b*), CJ step, system/topic, tags, reference |
+| **Content** | 456 standalone items + 6 NCJMM case studies (36 sub-items) = 492-item pool tracking the 2026 NCLEX-RN blueprint; 74 items at maximum difficulty (16.2%); 11 variant groups across 27 items; all 7 item formats in use; all 8 Client Needs; every item: rationale per option, NCLEX strategy, difficulty (label + numeric *b*), CJ step, system/topic, tags, reference |
 | **Practice** | Quick / Smart / Custom builder / by Client Need · system · topic · type · difficulty / Medication / Priority & Delegation / Timed; 30-item diagnostic → preparation profile; review-incorrect, bookmarks, review-later, re-test |
 | **Simulation** | Full NCLEX-RN 2026 (85–150 items, 5 h, 3 cases, 15 pretest — zero reuse), Preview (26–40), Timed 60; pre-flight consent, no backtracking, no feedback, blueprint-constrained adaptive selection, 95%-confidence stopping rule vs cut score |
 | **Clinical judgment** | Unfolding case studies with exhibit reveal schedules; six-step debrief mapped to NCJMM |
