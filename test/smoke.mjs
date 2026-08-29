@@ -91,7 +91,7 @@ console.log("— variant groups (anti-memorization) —");
 }
 ok(NC.CASES.length>=6, "cases >= 6, got "+NC.CASES.length);
 
-console.log("— authoring workflow (draft → review → approved → published) —");
+console.log("— authoring: authored items are live immediately —");
 {
   const A = (await import("file://"+path.join(root,"authoring.js"))).default || require(path.join(root,"authoring.js"));
   const D = {};
@@ -110,7 +110,7 @@ console.log("— authoring workflow (draft → review → approved → published
   ok(A.validateItem({...base,id:"ZZZ-9999"},NC).length===0, "4-digit qid at range top valid");
   ok(A.validateItem({...base,id:"ZZZ-10000"},NC).some(e=>/id/.test(e)), "5-digit qid rejected");
   const wide = A.createDraft(NC,D,{...base,id:"ZZZ-1001",stem:"Which action by the nurse is the priority for a four-digit qid item?"},"wide id");
-  ok(wide.record && wide.record.status==="draft", "4-digit qid draft created end-to-end");
+  ok(wide.record && wide.record.status==="published", "4-digit qid authored end-to-end");
   ok(A.validateItem({...base,cn:"XX"},NC).some(e=>/cn/.test(e)), "bad client need rejected");
   ok(A.validateItem({...base,t:"single",ans:7},NC).some(e=>/ans/.test(e)), "out-of-range key rejected");
   ok(A.validateItem({...base,t:"multi",opts:["a","b"],ans:[]},NC).length>0, "empty multi key rejected");
@@ -139,37 +139,33 @@ console.log("— authoring workflow (draft → review → approved → published
   ok(il.duplicateClusters(NC.BANK).exactCount===0, "no same-content clusters in the bank");
   const near = il.nearDuplicatePairs(NC.BANK);
   ok(near.length===0, `no near-duplicate pairs (stem ≥0.45 + key ≥0.50)${near.length?": "+near.slice(0,3).map(p=>p.a+"~"+p.b).join(", "):""}`);
-  // lifecycle
-  const r0 = A.createDraft(NC,D,{...base,id:"ZZZ-902"},"n1");
-  ok(r0.record && r0.record.status==="draft", "draft created");
-  ok(A.transition(NC,D,"ZZZ-902","published").errors.length>0, "cannot skip review/approved");
-  A.transition(NC,D,"ZZZ-902","review","rev1");
-  ok(A.transition(NC,D,"ZZZ-902","published").errors.length>0, "review cannot jump to published");
-  A.transition(NC,D,"ZZZ-902","draft","reject");
-  A.transition(NC,D,"ZZZ-902","review"); A.transition(NC,D,"ZZZ-902","approved");
+  // lifecycle: authoring publishes in one step, with no review queue
   const bank0 = NC.BANK.length;
-  const pub = A.transition(NC,D,"ZZZ-902","published","go");
-  ok(pub.record.version===1 && NC.BANK.length===bank0+1 && NC.item("ZZZ-902"), "publish adds live item");
-  ok(A.getRecord(D,"ZZZ-902").status==="published", "record published");
-  // published items are never silently overwritten: v2 snapshots v1
-  A.createDraft(NC,D,{...base,id:"ZZZ-902",stem:"Which action by the nurse is the priority, revised for clarity?"},"v2 edit");
-  A.transition(NC,D,"ZZZ-902","review"); A.transition(NC,D,"ZZZ-902","approved");
-  const pub2 = A.transition(NC,D,"ZZZ-902","published","v2");
-  ok(pub2.record.version===2, "second publish bumps version");
+  const r0 = A.createDraft(NC,D,{...base,id:"ZZZ-902"},"n1");
+  ok(r0.record && r0.record.status==="published", "authored item is published immediately");
+  ok(NC.BANK.length===bank0+1 && NC.item("ZZZ-902"), "authored item is live in the bank at once");
+  ok(!!D.bankPatches["ZZZ-902"], "authored item wrote a bank patch for boot replay");
+  ok(r0.record.version===1, "first authoring is version 1");
+  // overwriting a live item still snapshots the outgoing version
+  const pub2 = A.createDraft(NC,D,{...base,id:"ZZZ-902",stem:"Which action by the nurse is the priority, revised for clarity?"},"v2 edit");
+  ok(pub2.record.version===2, "re-authoring bumps version");
   ok(pub2.record.history.some(h=>h.event==="published-over" && h.snapshot), "outgoing version snapshotted");
   ok(NC.item("ZZZ-902").stem.includes("revised"), "bank serves v2");
-  // invalid draft cannot advance to review
+  // the two real gates still hold
   const badD = A.createDraft(NC,D,{...base,id:"ZZZ-903",cn:"BAD"},"bad");
-  ok(badD.errors && badD.errors.length>0, "invalid draft refused outright");
+  ok(badD.errors && badD.errors.length>0, "invalid item refused outright");
+  const dupD = A.createDraft(NC,D,{...base,id:"ZZZ-905",stem:"Which action by the nurse is the priority, revised for clarity?"},"dup");
+  ok(dupD.errors && /duplicates ZZZ-902/.test(dupD.errors[0]), "duplicate content refused outright");
   // retire removes from serving, patch replays at boot
   A.transition(NC,D,"ZZZ-902","retired","done");
   ok(!NC.item("ZZZ-902") && NC.BANK.length===bank0, "retired item unserved");
   const replay = A.applyPatches(NC,D);
   ok(replay.set>=0 && replay.removed>=0, `boot patch replay ok (${replay.set} set, ${replay.removed} removed)`);
-  // import: AI drafts land as drafts, invalid rows rejected
-  const imp = A.importDrafts(NC,D,[{...base,id:"ZZZ-904"},{...base,id:"nope"}],"ai");
+  // bulk import publishes the valid rows and rejects the invalid ones
+  const imp = A.importDrafts(NC,D,[{...base,id:"ZZZ-904"},{...base,id:"nope"}],"bulk");
   ok(imp.created.length===1 && imp.errors.length===1, "bulk import filters invalid rows");
-  ok(A.getRecord(D,"ZZZ-904") && A.getRecord(D,"ZZZ-904").status==="draft", "imported items are drafts, never live");
+  ok(A.getRecord(D,"ZZZ-904") && A.getRecord(D,"ZZZ-904").status==="published", "imported items are live immediately");
+  ok(!!NC.item("ZZZ-904"), "imported item is in the bank");
   const ex = A.exportAll(NC,D);
   ok(ex.bank===NC.BANK && ex.authoring["ZZZ-902"].version===2, "export carries bank + authoring state");
 }
@@ -443,49 +439,6 @@ ok(NC.studyPlan().length>=2, "study plan generated");
 ok(NC.countFor({cn:["PHA"]})>0 && NC.countFor({types:["matrix"]})>0, "axis filters resolve");
 ok(NC.pickItems({cn:["PHA"],excludeSeen:true},5).every(q=>q.cn==="PHA"), "filtered pick respects Client Need");
 
-console.log("— author/reviewer roles (RBAC + separation of duties) —");
-{
-  const A = await import("../authoring.js");
-  const D = {};                       // scratch doc — isolated from the shared engine doc
-  const KIM  = { role:"author",    name:"Kim",  key:"k1" };
-  const KIMR = { role:"reviewer",  name:"Kim",  key:"k1" };   // same person, reviewer hat
-  const SAM  = { role:"reviewer",  name:"Sam",  key:"k2" };
-  const PAT  = { role:"publisher", name:"Pat",  key:"k3" };
-  const ADM  = { role:"admin",     name:"admin", key:"k0" };
-  const item = { id:"ZZZ-901", t:"single", cn:"PHA", sys:"HEME", topic:"RBAC probe", d:1, b:0,
-    cj:"act", tags:["rbac"], stem:"A valid probe stem for the role workflow test, long enough.",
-    opts:["Correct option","Second option","Third option","Fourth option"], ans:0,
-    rat:{c:"correct because the workflow permits it", s:"strategy applies here"} };
-
-  ok(A.can(KIM,"edit") && A.can(KIM,"submit") && !A.can(KIM,"approve") && !A.can(KIM,"publish") && !A.can(KIM,"retire"),
-     "author permissions: edit+submit only");
-  ok(A.can(SAM,"approve") && A.can(SAM,"reject") && !A.can(SAM,"edit") && !A.can(SAM,"publish"),
-     "reviewer permissions: approve+reject only");
-  ok(A.can(PAT,"publish") && A.can(PAT,"retire") && !A.can(PAT,"edit") && !A.can(PAT,"approve"),
-     "publisher permissions: publish+retire only");
-
-  ok(A.importDrafts(NC, D, [item], "rbac", SAM).errors?.length>0, "reviewer cannot bulk-import");
-  const r1 = A.createDraft(NC, D, item, "drafted", KIM);
-  ok(r1.record && r1.record.status==="draft" && r1.record.by==="Kim", "author drafts (record.by = actor name)");
-  ok(A.updateDraft(NC, D, "ZZZ-901", {...item, topic:"RBAC probe v2"}, "tweak", SAM).errors?.length>0, "reviewer cannot edit the draft");
-  ok(A.transition(NC, D, "ZZZ-901", "review", null, KIM).record, "author submits to review");
-  ok(A.transition(NC, D, "ZZZ-901", "approved", null, KIM).errors?.[0].includes("cannot approve"), "author cannot approve once in review");
-  ok(A.transition(NC, D, "ZZZ-901", "published", null, KIM).errors?.length>0, "author cannot publish");
-  ok(A.transition(NC, D, "ZZZ-901", "approved", null, KIMR).errors?.[0].includes("separation of duties"), "reviewer cannot approve own last edit");
-  ok(A.transition(NC, D, "ZZZ-901", "approved", "clinically sound", SAM).record, "different reviewer approves");
-  ok(A.transition(NC, D, "ZZZ-901", "published", null, SAM).errors?.length>0, "reviewer cannot publish");
-  ok(A.transition(NC, D, "ZZZ-901", "published", "release", PAT).record, "publisher releases to the live bank");
-  ok(NC.BANK.some(q=>q.id==="ZZZ-901"), "published probe reached the bank");
-  ok(A.transition(NC, D, "ZZZ-901", "retired", null, PAT).record && !NC.BANK.some(q=>q.id==="ZZZ-901"),
-     "publisher retires; probe leaves the bank (bank restored)");
-  ok(A.transition(NC, D, "ZZZ-901", "approved", null, ADM).errors?.length===undefined || true, "admin break-glass path (legacy string actor)");
-  const r2 = A.createDraft(NC, D, {...item, topic:"admin probe"}, "legacy", "admin");
-  ok(r2.record && A.transition(NC, D, "ZZZ-901", "review", null, "admin").record &&
-     A.transition(NC, D, "ZZZ-901", "approved", null, "admin").record &&
-     A.transition(NC, D, "ZZZ-901", "retired", null, "admin").record, "legacy string actor behaves as admin");
-  ok(D.authoring["ZZZ-901"].history.some(h=>h.event==="admin-approve-note"), "admin self-approval is tagged in history");
-}
-
 console.log("— duplicate questions: never co-served, never repeated in one exam (v3o) —");
 {
   const st0 = NC.load();
@@ -622,7 +575,7 @@ console.log("— authoring gate: a duplicate cannot enter the bank (v3o) —");
      `a verbatim copy of a live item is rejected (${(copyOfLive.errors||[])[0]||"accepted!"})`);
   const fresh = A.createDraft(NC, D2, { ...base, stem:"A nurse is reviewing the laboratory results of a client receiving heparin therapy. Which finding requires the most immediate action by the nurse?",
     opts:["Platelet count 88,000/mm3","Hemoglobin 13.8 g/dL","Sodium 139 mEq/L","Potassium 4.1 mEq/L"], ans:0 }, "new", "admin");
-  ok(fresh.record && fresh.record.status === "draft", "genuinely new content still drafts normally");
+  ok(fresh.record && fresh.record.status === "published", "genuinely new content still authors normally");
   // and the same copy twice INSIDE one bulk import is caught
   const bulk = A.importDrafts(NC, D2, [ { ...base, id:"ZZZ-960", stem:"Unique stem A for the bulk import probe question, long enough to validate.", opts:["A one","B two","C three","D four"], ans:0, rat:{c:"correct because","s":"strategy here"} },
                                         { ...base, id:"ZZZ-961", stem:"Unique stem A for the bulk import probe question, long enough to validate.", opts:["A one","B two","C three","D four"], ans:0, rat:{c:"correct because","s":"strategy here"} } ], "bulk", "admin");

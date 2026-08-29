@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node build-standalone.mjs && node build-online.mjs",
     "start": "node --max-old-space-size=384 server.js",
-    "test": "node test/smoke.mjs && node test/dom.mjs && node test/admin.mjs && node test/store.mjs && node test/demo.mjs",
+    "test": "node test/smoke.mjs && node test/dom.mjs && node test/store.mjs && node test/demo.mjs",
     "test:api": "node test/api.mjs",
     "calibrate": "node calibrate.js",
     "db:migrate": "node scripts/db-migrate.js",

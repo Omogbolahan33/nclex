@@ -11,7 +11,7 @@ and answer keys that never leave the server.
 npm i jsdom            # once per environment (dev dependency for the DOM test)
 npm run build          # build standalone.html + public/ (key-free app)
 npm start              # exam server on :3000
-npm test               # engine/bank smoke (2144) + DOM (99) + admin (35) + store (36) + demo (1214)
+npm test               # engine/bank smoke (2131) + DOM (99) + store (36) + demo (1214)
 npm run test:api       # API/security/authoring/PWA/hardening suite (~140, CAT-length dependent) — needs `npm start` running
 npm run lint           # item-writing gate + duplicate-content scan of the bank
 npm run calibrate      # item calibration report from the response log (--apply to persist)
@@ -45,8 +45,6 @@ authoring.js     v3c review workflow + v3l RBAC: draft → review → approved �
                  (published items are never overwritten without a snapshot in
                  history); bulk import lands everything as drafts; bank patches
                  persist and replay at boot
-admin/           authoring console (mobile-first, /admin) — key-gated UI whose
-                 transition buttons render from the server's transition map
 js/notify.js     v3d study reminders: permission-gated Notification API with
                  in-app fallback, daily time preference, exam-countdown + streak
                  messaging; local-only (no server push)
@@ -63,7 +61,7 @@ store-pg.js      Postgres adapter v2 (PER-TABLE NORMALIZED): users · tokens ·
                  flush + automatic v1 document migration; identical interface; `npm i pg`
 schema.sql       Postgres DDL v2: normalized tables (users, tokens, responses,
                  sims, seen, authoring_records, bank_patches, meta) + v1 migration
-test/            smoke (2144) · dom (99) · admin (35) · store (36) · demo (1214) · api (~140, CAT-length dependent) — 3,660+ checks total
+test/            smoke (2131) · dom (99) · store (36) · demo (1214) · api (~110) — 3,590+ checks total
 ```
 
 ## Feature set
@@ -80,11 +78,11 @@ test/            smoke (2144) · dom (99) · admin (35) · store (36) · demo (1
 | **Accounts & sync (v3a)** | Sign up / sign in / sign out in Settings; scrypt-hashed passwords, 30-day bearer tokens; progress uploads after each session and restores on any device; local progress merges (no data loss) |
 | **Persistence (v3a)** | Users, tokens, sims, and the full response log survive restarts (`data/store.json`) — the response log is the feed for future item calibration |
 | **Security** | Sanitized bank in the browser (no keys/rationales), server-side scoring, bank files never served (404), per-IP rate limits (auth 30/5 min, API 400/min), no plaintext secrets at rest |
-| **Authoring & review (v3c)** | Workflow draft → clinical review → approved → published with legal-transition enforcement and version history (outgoing items snapshotted, never silently overwritten); full item-schema validation; bulk import (AI drafts land as drafts — human review before anything reaches examinees); export for backup; published items grow the live bank via persistent boot-replayed patches; admin console at `/admin` (key-gated) |
+| **Authoring (v4)** | Authored items are **live immediately** — no review queue, no approval gate. Schema validation and duplicate detection still refuse bad content outright; version history snapshots any outgoing item so nothing is silently overwritten; retire is the only transition. Authored items grow the live bank via persistent boot-replayed patches |
 | **Anti-memorization (v3c/e)** | Items can carry a `variantGroup` (11 groups); the engine serves at most one member per exam/session in every selection path (practice, smart, diagnostic, simulation) and rotates re-tests to the least-exposed sibling |
 | **No repeats, ever (v3o)** | A question is served **at most once per exam** — excluded by qid, by variant/duplicate group, and by content, so a bank that holds the same question under two ids cannot show it twice. When the eligible pool runs out the exam ends (`stopReason:"pool"`) instead of recycling answered items. Duplicate content (same stem + options, or a shared stem) is detected at boot, linked into one constraint group, reported at `GET /api/admin/duplicates`, and blocked at the authoring gate. Exposure history (`seen`) syncs with the account, and practice says out loud how much of a set is new: `12 new · 3 already answered` |
 | **Key-gated explanations (v3c)** | `/api/item/:id/full` refuses (403) unless the requesting session already answered that item — rationales are never available before submission, even to a crafted request |
-| **Distractor analysis (v3d)** | Per-option pick rate + point-biserial vs rest-score for single/multi items from the response log; flags dead (<5%), attracts-strong (rpb >+0.20 on a non-key option), weak-key; `GET /api/admin/distractors` + admin-console card + CLI section |
+| **Distractor analysis (v3d)** | Per-option pick rate + point-biserial vs rest-score for single/multi items from the response log; flags dead (<5%), attracts-strong (rpb >+0.20 on a non-key option), weak-key; `GET /api/admin/distractors` + CLI section |
 | **Study reminders (v3d)** | Daily reminder at a chosen time (Settings): browser notification when permission is granted, in-app fallback otherwise; exam-countdown and streak-aware messaging; persisted locally |
 | **PWA offline (v3c)** | Service worker precaches the key-free shell + sanitized bootstrap (build-stamped, old caches purged); offline answers queue in localStorage as pending (excluded from stats) and replay through `/api/answer` on reconnect — scoring stays server-side because the keys never leave the server |
 
@@ -187,8 +185,9 @@ a soft preference, so returning candidates get new material first.
 - Calibration needs real candidate volume — current stats come mostly from test traffic (n≥8 gate, blend weight n/(n+20) protects against thin data).
 - Offline-queued answers score only on reconnect (keys are server-side by design) — pending items are excluded from stats until synced.
 - **v3o — no repeats**: hard one-serve-per-exam rule (qid + variant/duplicate group, no full-bank fallback — a dry pool ends the exam as `stopReason:"pool"`), boot-time duplicate-content detection that links repeats and shared stems into one constraint group, an authoring/import gate against new duplicates, `npm run db:dedupe` + `GET /api/admin/duplicates` reporting, and exposure history (`seen`) synced per account with honest "N new · M already answered" messaging in practice.
+- **v4 — no approval gate**: the draft → review → approved → published pipeline, the role table and the `/admin` console are removed. Authoring publishes in one step; validation and duplicate detection are the only gates.
 - **v3m — deploy + scale**: `content.js` auto-discovers `js/bank<N>.js`/`js/case<N>.js` (drop a file in, add its script tag — the smoke drift guard fails on missing *or* stale tags; all loaders/linter/calibration/build/tests share it), Render Web Service settings (`render.yaml`) + Supabase runbook (`DEPLOYMENT.md`) + idempotent `npm run db:migrate`, managed-Postgres TLS auto-detect, and `tools/draft-bank.mjs` — a bulk scaffolder that emits schema-valid drafts continuing each CN ID sequence for the governed import→review→approve→publish pipeline (verified live: published item reaches examinees, drafts never do; bank restored after retire). Bootstrap payload: 240 KB raw / 75 KB gzipped at 344 items (~250 B/item gzipped → thousands ≈ well under 1 MB). Health/banner versions now track `package.json`.
-- **v3l — governance + storage**: role-based authoring (AUTH_KEYS="key:role:name,…": author drafts, reviewer approves — with separation of duties, a reviewer cannot approve content they last edited — publisher releases; admin stays break-glass and self-approvals are tagged in history; 403 vs 400 semantics enforced), and per-table Postgres normalization (schema.sql v2: users/tokens/responses/sims/seen/authoring_records/bank_patches/meta; automatic v1→v2 document migration on first boot; ts-watermarked upsert responses mirroring the engine's replace-on-re-answer; legacy backup row kept for rollback).
+- **v3l — governance + storage**: per-table Postgres normalization (schema.sql v2: users/tokens/responses/sims/seen/authoring_records/bank_patches/meta; automatic v1→v2 document migration on first boot; ts-watermarked upsert responses mirroring the engine's replace-on-re-answer; legacy backup row kept for rollback).
 - The product is NCLEX-RN only. The PN exam family was removed along with the `fam` affinity system in the exam engine; the 30 items that had been authored from the practical/vocational nurse perspective remain in the bank as ordinary RN-eligible content.
 - Reminders fire while the app is open (tab or installed PWA); no server push or closed-app delivery on the zero-dep stack.
 - Distractor statistics inherit the calibration caveat: current samples are mostly test traffic (n≥20 gating; dead/weak flags are provisional until real candidate volume).

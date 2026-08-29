@@ -206,88 +206,20 @@ console.log("— production hardening (v4) —");
   ok(gate.code===1 && /ADMIN_KEY/.test(gate.stderr||""), `production gate refuses boot without ADMIN_KEY (code ${gate.code})`);
 }
 
-console.log("— authoring workflow (v3c) —");
+console.log("— engine diagnostics (calibration, distractors, duplicates) —");
 {
   const key = { "Content-Type":"application/json", "X-Admin-Key":"dev-admin" };
   const req = (p, opts) => fetch(B+p, Object.assign({headers:key}, opts||{})).then(r=>r.json().then(d=>({status:r.status, data:d})).catch(()=>({status:r.status,data:null})));
-  // key enforcement on every authoring endpoint
-  for (const [p,m] of [["/api/admin/items","GET"],["/api/admin/items","POST"],["/api/admin/export","GET"],["/api/admin/import","POST"]]){
-    const r = await fetch(B+p, m==="POST"?{method:"POST"}:undefined);
-    ok(r.status===401, `authoring ${m} ${p} requires key`);
+  // the authoring console and its CRUD endpoints are gone; the diagnostics stay key-gated
+  for (const p of ["/api/admin/distractors","/api/admin/duplicates","/api/admin/calibration"]){
+    const r = await fetch(B+p);
+    ok(r.status===401, `${p} requires an admin key`);
   }
-  // health reports authoring counts
-  const h = await j("/api/health");
-  ok(h.data.version===PKG.version && h.data.authoring && typeof h.data.authoring==="object", "health v"+PKG.version+" + authoring field");
-  ok(h.data.items>=215, "health bank count "+h.data.items+" ≥ 215");
-
-  const QID = "API-" + String(Math.floor(Math.random()*900)+100); // fresh each run — records persist
-  const item = { id:QID, t:"single", cn:"SIC", sys:"INF", topic:"API authoring", d:1, b:0, cj:"act",
-    tags:["api"], stem:"Which action by the nurse is the priority in this scenario?",
-    opts:["Correct first action","Wrong but tempting","Also wrong"], ans:0,
-    rat:{c:"It is correct because safety comes first.",s:"Use the safety hierarchy."} };
-
-  // validation rejects
-  let bad = await req("/api/admin/items", {method:"POST", body:JSON.stringify({item:{...item, cn:"NOPE"}})});
-  ok(bad.status===400 && bad.data.errors.length>0, "invalid item rejected with errors");
-  bad = await req("/api/admin/items", {method:"POST", body:JSON.stringify({item:{...item, id:"MOC-001"}})});
-  ok(bad.status===400, "duplicate id rejected");
-
-  // illegal transitions rejected
-  let r1 = await req("/api/admin/items", {method:"POST", body:JSON.stringify({item, note:"api test"})});
-  ok(r1.status===200 && r1.data.record.status==="draft", "draft created via API");
-  let r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"published"})});
-  ok(r2.status===400, "draft→published rejected (must pass review+approval)");
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"review", note:"clinical review"})});
-  ok(r2.status===200 && r2.data.record.status==="review", "draft→review ok");
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"published"})});
-  ok(r2.status===400, "review→published rejected (approve first)");
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"draft", note:"needs fixes"})});
-  ok(r2.status===200 && r2.data.record.status==="draft", "review→draft (reject) ok");
-  // cannot edit while approved/published — and updateDraft validation while draft
-  r2 = await req(`/api/admin/items/${QID}`, {method:"PUT", body:JSON.stringify({item:{...item, ans:2}, note:"key fix"})});
-  ok(r2.status===200 && r2.data.record.draft.ans===2, "draft edit ok");
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"review"})});
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"approved"})});
-  ok(r2.status===200 && r2.data.record.status==="approved", "review→approved ok");
-  r2 = await req(`/api/admin/items/${QID}`, {method:"PUT", body:JSON.stringify({item})});
-  ok(r2.status===400, "edit blocked while approved");
-  const before = (await j("/api/health")).data.items;
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"published", note:"ship"})});
-  ok(r2.status===200 && r2.data.record.version===1 && r2.data.bankCount===before+1, "published → live, bank grew to "+r2.data.bankCount);
-  // new item is served sanitized, and scoreable server-side
-  const bsx = await j("/api/bootstrap");
-  const served = (bsx.data.bank||[]).find(x=>x.id===QID);
-  ok(served && served.rat===undefined && served.ans===undefined, "published item served key-free via bootstrap");
-  const sc = await j("/api/answer", {sid:"api-authoring", qid:QID, ans:2, timeMs:3000});
-  ok(sc.status===200 && sc.data.score===1, "published item scores server-side (key=2 after edit) → "+sc.data.score);
-  const full = await j(`/api/item/${QID}/full?sid=api-authoring`);
-  ok(full.data.ans===2 && full.data.rat, "full item w/ rationale after answer");
-  // versioning: edit published → v2, old snapshot kept
-  r2 = await req("/api/admin/items", {method:"POST", body:JSON.stringify({item:{...item, stem:"Which action by the nurse is the priority right now, clarified scenario?", opts:["Correct first action","Wrong","No"], ans:0}, note:"v2"})});
-  ok(r2.status===200 && r2.data.record.status==="draft" && r2.data.record.version===1, "published item reopened as change-draft");
-  await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"review"})});
-  await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"approved"})});
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"published"})});
-  ok(r2.data.record.version===2 && r2.data.record.history.some(h=>h.event==="published-over"), "v2 published with snapshot of v1");
-  // queue & versions listing
-  let q = await req("/api/admin/items");
-  ok(q.data.queue.some(x=>x.qid===QID && x.status==="published"), "queue lists published record");
-  ok(q.data.bank.patched.includes(QID), "bank patch tracked");
-  // export + import round-trip
-  const ex = await req("/api/admin/export");
-  ok(ex.data.bank.some(x=>x.id===QID) && ex.data.authoring[QID].version===2, "export carries v2 item + record");
-  const imp = await req("/api/admin/import", {method:"POST", body:JSON.stringify({items:[{...item,id:"API-902"},{...item,id:"xx"}]})});
-  ok(imp.data.created.length===1 && imp.data.errors.length===1, "import: 1 draft created, 1 rejected");
-  // retire → unserved, count restored
-  r2 = await req(`/api/admin/items/${QID}/transition`, {method:"POST", body:JSON.stringify({to:"retired", note:"cleanup"})});
-  ok(r2.status===200, "retire ok");
-  const gone = await j(`/api/item/${QID}/full`);
-  ok(gone.status===404, "retired item no longer served");
-  const after = (await j("/api/health")).data.items;
-  ok(after===before, "bank count restored ("+after+")");
-  // cleanup: retire API-902 too, leaving store tidy
-  await req("/api/admin/items/API-902/transition", {method:"POST", body:JSON.stringify({to:"retired"})});
-  // seed MOC-001 answers so the report is populated on a blank store too
+  for (const p of ["/api/admin/items","/api/admin/import","/api/admin/export","/api/admin/versions","/admin"]){
+    const r = await fetch(B+p);
+    ok(r.status===404, `removed console surface ${p} is gone`);
+  }
+  // seed MOC-001 answers so the report is populated on a blank store also
   // (each sid answers a second item as well, so rest-scores are well-defined)
   for (let i=0;i<6;i++){
     const sid = "dseed-"+Date.now()+"-"+i;
@@ -308,7 +240,6 @@ console.log("— authoring workflow (v3c) —");
   ok(!multi || multi.options.every(o=>o.n<=multi.n), "multi option counts bounded by n");
 
 
-  console.log("— duplicate report (v3o) —");
   const dnoKey = await fetch(B+"/api/admin/duplicates");
   ok(dnoKey.status === 401, "duplicates endpoint requires an admin key");
   const dups = await req("/api/admin/duplicates");
@@ -324,11 +255,6 @@ console.log("— authoring workflow (v3c) —");
      `authored variant groups are reported separately (${health2.data.variantGroups})`);
   ok(health2.data.duplicateClusters === dups.data.clusters - health2.data.variantGroups,
      "health and the admin report agree once authored variant groups are excluded");
-
-  const adm = await fetch(B+"/admin");
-  ok(adm.status===200 && (await adm.text()).includes("Authoring console"), "/admin serves the console");
-  const admjs = await fetch(B+"/admin/admin.js");
-  ok(admjs.status===200, "/admin/admin.js served");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -98,7 +98,6 @@ async function main() {
       });
     } else {
       const r = authoring.importDrafts(NC, D, chunk, `${NOTE} #${Math.floor(i / BATCH) + 1}`, actor);
-      if (r.forbidden) { console.error("[import] forbidden: " + r.errors.map(e => e.errors.join("; ")).join(" | ")); process.exit(1); }
       created.push(...r.created);
       r.errors.forEach(e => errors.push({ ...e, index: e.index + i }));
     }

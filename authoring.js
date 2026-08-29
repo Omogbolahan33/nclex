@@ -1,15 +1,16 @@
-/* RN Ready — authoring & review workflow (v3c). Zero-dep, Node-side module.
-   Lifecycle:  draft → review → approved → published → retired
-               (review can reject back to draft; approved can drop back to review;
-                any live state can retire; retired can be re-published.)
+/* RN Ready — authoring (v4). Zero-dep, Node-side module.
 
-   Guarantees (user requirements):
-   - Published questions are NEVER overwritten without version history: every
-     publish/retire snapshots the outgoing item into record.history first.
-   - AI-drafted content enters as status "draft" — it cannot reach examinees
-     until a human walks it through review → approved → published.
-   - Every mutation is validated against the item schema + taxonomy before it
-     can advance; drafts are only served to examinees at "published".
+   Lifecycle: authored → live. `createDraft` validates, duplicate-checks, and
+   publishes in one step; `transition` retires and restores.
+
+   The previous pipeline (draft → review → approved → published, with role-based
+   access control and separation of duties) has been retired along with the admin
+   console that drove it. An authored item is available immediately. What still
+   gates it is the two checks that actually protect an examinee:
+     · validateItem — schema + taxonomy contract
+     · duplicateOf  — the same question cannot enter under a second id
+   And what is still guaranteed is rollback: overwriting a live item snapshots the
+   outgoing version into record.history first, so nothing is lost silently.
 
    Storage shape (D.authoring[qid]):
    { qid, status, version, draft, published?, created, updated, by,
@@ -26,39 +27,29 @@
    max-id scan in tools/draft-bank.mjs (regex `[0-9]+`, width-agnostic) and
    deterministic report sorts, which stay deterministic at mixed widths.      */
 const ID_RE = /^[A-Z]{2,4}-\d{3,4}$/;
-const STATUSES = ["draft","review","approved","published","retired"];
+const STATUSES = ["published","retired"];
 
-/* ── role-based access control (v3k): the authoring pipeline separates duties.
-   author    drafts and submits for review (AI-assisted drafts land here too)
-   reviewer  clinically signs off: review → approved (cannot approve own edit)
-   publisher controls release: approved → published, retire/restore
-   editor    author + reviewer combined (small teams), still cannot publish
-   admin     break-glass: all actions, overrides are tagged in history
-   Legacy string `by` arguments are treated as admin (back-compat).           */
-const ROLES = ["admin","editor","author","reviewer","publisher"];
-const ACTIONS = {
-  read:     ROLES.slice(),
-  edit:     ["admin","editor","author"],   // create/update drafts, bulk import
-  submit:   ["admin","editor","author"],   // draft → review
-  reject:   ["admin","editor","reviewer"], // review → draft (send back), approved → review
-  approve:  ["admin","editor","reviewer"], // review → approved (separation of duties applies)
-  publish:  ["admin","publisher"],         // → published, retired → published
-  retire:   ["admin","publisher"]          // any live state → retired
-};
+/* `by` is kept purely as an attribution string for the audit history. It used to
+   select a role from ROLES and gate actions through ACTIONS; role-based access
+   control went with the review pipeline, so any actor may author and retire.  */
 function actorOf(by){
-  if (by && typeof by === "object" && by.role) return { role: by.role, name: by.name || by.role, key: by.key };
-  return { role:"admin", name: (typeof by === "string" && by) || "admin" };
+  if (by && typeof by === "object") return { name: by.name || "admin" };
+  return { name: (typeof by === "string" && by) || "admin" };
 }
-function can(actor, action){
-  const a = actorOf(actor);
-  return (ACTIONS[action]||[]).includes(a.role);
-}
+/* Flat lifecycle. This used to be draft → review → approved → published with
+   role gates and separation of duties, so nothing reached an examinee until a
+   reviewer signed off and a publisher released it. That review pipeline is
+   retired: an authored item is validated, duplicate-checked, and live in one
+   step. The guarantees worth keeping are kept — schema validation, the
+   duplicate gate, and version history with a snapshot of anything overwritten.
+   The intermediate states remain listed so stored records from the old
+   pipeline still resolve and can move forward.                            */
 const TRANSITIONS = {
-  draft:    ["review","retired"],
-  review:   ["draft","approved","retired"],
-  approved: ["review","published","retired"],
-  published:["retired"],
-  retired:  ["published"]
+  draft:    ["published","retired"],
+  review:   ["draft","published","retired"],
+  approved: ["published","retired"],
+  published:["draft","retired"],
+  retired:  ["draft","published"]
 };
 
 /* ── validation: full item schema (same rules the engine/render rely on) ── */
@@ -183,44 +174,67 @@ function getRecord(D, qid){ ensureState(D); return D.authoring[qid] || null; }
    editing a published item reopens it as a draft; the live bank copy keeps
    serving until the new version is published, and the outgoing item is
    snapshotted at that moment) */
+/* Author an item and make it live in one step.
+
+   There is no longer a review queue: the approval pipeline that kept AI-assisted
+   drafts away from examinees until a reviewer signed off has been retired, so
+   authoring an item publishes it. The two guarantees that actually protect
+   examinees are kept and now run as the only gate:
+     · validateItem — the schema + taxonomy contract
+     · duplicateOf  — the same question cannot enter under a second id
+   Anything overwritten is still snapshotted into history, so a live item can
+   always be rolled back.                                                    */
 function createDraft(NC, D, item, note, by){
-  if (!can(by, "edit")) return { forbidden:true, errors:[`role '${actorOf(by).role}' cannot author drafts (needs author/editor/admin)`] };
   const errs = validateItem(item, NC);
   if (errs.length) return { errors: errs };
   ensureState(D);
   const prior = D.authoring[item.id];
-  const clash = NC.allItems().some(q=>q.id===item.id);
-  if (clash && !prior) return { errors:["id already in bank — use it to open a change-draft or pick a new id"] };
   const dup = duplicateOf(NC, item, item.id);
   if (dup) return { errors:[`duplicates ${dup.id} (${dup.kind}) — edit that item instead, or give this one a ` +
                            `variantGroup so the two are served as alternates, never together`] };
-  const rec = prior || { qid: item.id, status:"draft", version: 0, history: [], created: now() };
-  const reopened = rec.status === "published";
-  rec.status = "draft";
+  const ts = now();
+  const rec = prior || { qid: item.id, status:"draft", version: 0, history: [], created: ts };
+  if (NC.CASES.some(c=>c.items.some(i=>i.id===item.id)))
+    return { errors:["qid collides with a case-study item"] };
+
+  const outgoing = NC.BANK.find(q=>q.id===item.id);
+  if (outgoing) rec.history.push({ version: rec.version, ts, event:"published-over", note: note||"", snapshot: outgoing });
+
+  const idx = NC.BANK.findIndex(q=>q.id===item.id);
+  if (idx >= 0) NC.BANK[idx] = item; else NC.BANK.push(item);
+
   rec.draft = item;
+  rec.published = item;
+  rec.version += 1;
+  rec.status = "published";
   rec.by = actorOf(by).name;
-  rec.updated = now();
-  rec.history.push({ version: rec.version, ts: now(), event: reopened ? "reopened-for-edit" : "edited",
-                     note: note || "draft saved" });
+  rec.updated = ts;
+  rec.history.push({ version: rec.version, ts, event:"authored", note: note || "authored and published", snapshot: item });
   D.authoring[item.id] = rec;
+  D.bankPatches[item.id] = { op:"set", item };
   return { record: rec };
 }
 
-/* edit a draft — only while in draft/review */
+/* edit a live item — publishes the new version immediately and snapshots the
+   outgoing one into history so it can be rolled back. */
 function updateDraft(NC, D, qid, item, note, by){
   const rec = getRecord(D, qid);
   if (!rec) return { errors:["no such record"] };
-  if (rec.status !== "draft" && rec.status !== "review")
-    return { errors:[`cannot edit while status is '${rec.status}' (transition back to draft or publish a new version)`] };
   const errs = validateItem(item, NC);
   if (errs.length) return { errors: errs };
-  if (item.id !== qid) return { errors:["id cannot change while in review cycle"] };
-  if (!can(by, "edit")) return { forbidden:true, errors:[`role '${actorOf(by).role}' cannot edit drafts (needs author/editor/admin)`] };
+  if (item.id !== qid) return { errors:["id cannot change on an existing item"] };
   const dup = duplicateOf(NC, item, qid);
   if (dup) return { errors:[`duplicates ${dup.id} (${dup.kind}) — edit that item instead, or give this one a ` +
                            `variantGroup so the two are served as alternates, never together`] };
-  rec.draft = item; rec.by = actorOf(by).name; rec.updated = now();
-  rec.history.push({ version: rec.version, ts: now(), event:"edited", note: note || "draft updated" });
+  const ts = now();
+  const outgoing = NC.BANK.find(q=>q.id===qid);
+  if (outgoing) rec.history.push({ version: rec.version, ts, event:"published-over", note: note||"", snapshot: outgoing });
+  const idx = NC.BANK.findIndex(q=>q.id===qid);
+  if (idx >= 0) NC.BANK[idx] = item; else NC.BANK.push(item);
+  rec.draft = item; rec.published = item; rec.version += 1; rec.status = "published";
+  rec.by = actorOf(by).name; rec.updated = ts;
+  rec.history.push({ version: rec.version, ts, event:"authored", note: note || "item updated", snapshot: item });
+  D.bankPatches[qid] = { op:"set", item };
   return { record: rec };
 }
 
@@ -232,17 +246,7 @@ function transition(NC, D, qid, to, note, by){
   if (!TRANSITIONS[rec.status].includes(to))
     return { errors:[`illegal transition ${rec.status} → ${to} (allowed: ${TRANSITIONS[rec.status].join(", ")})`] };
 
-  // role gate: the target state decides which permission applies
   const actor = actorOf(by);
-  const actionFor = { review: rec.status==="draft" ? "submit" : "reject",
-                      draft: "reject", approved: "approve",
-                      published: "publish", retired: "retire" }[to];
-  if (!can(by, actionFor))
-    return { forbidden:true, errors:[`role '${actor.role}' cannot ${actionFor} (${rec.status} → ${to}) — allowed for: ${ACTIONS[actionFor].join(", ")}`] };
-  // separation of duties: a reviewer may not approve content they last edited
-  if (to === "approved" && actor.role !== "admin" && rec.by === actor.name)
-    return { forbidden:true, errors:[`separation of duties: '${actor.name}' last edited this record and cannot approve it — a different reviewer is required`] };
-
   ensureState(D);
   const ts = now();
   if (to === "published"){
@@ -274,14 +278,11 @@ function transition(NC, D, qid, to, note, by){
   }
   rec.by = actor.name;
   rec.updated = ts;
-  if (to === "approved" && actor.role === "admin")
-    rec.history.push({ version: rec.version, ts, event:"admin-approve-note", note:"approved by admin (break-glass: no separation of duties)" });
   return { record: rec };
 }
 
-/* ── bulk import: everything lands as drafts (AI output needs human review) ── */
+/* ── bulk import: every item is validated, duplicate-checked, and published ── */
 function importDrafts(NC, D, items, note, by){
-  if (!can(by, "edit")) return { created:[], forbidden:true, errors:[{ index:0, errors:[`role '${actorOf(by).role}' cannot import drafts (needs author/editor/admin)`] }] };
   const created = [], errors = [];
   (Array.isArray(items) ? items : []).forEach((item, i) => {
     const r = createDraft(NC, D, item, (note||"bulk import") + ` #${i+1}`, by);
@@ -343,5 +344,5 @@ function queueSummary(D){
                  t:r.draft?.t, updated:r.updated, by:r.by, histories:r.history.length }));
 }
 
-module.exports = { STATUSES, TRANSITIONS, ROLES, ACTIONS, can, validateItem, duplicateOf, createDraft, updateDraft,
+module.exports = { STATUSES, TRANSITIONS, validateItem, duplicateOf, createDraft, updateDraft,
                    transition, importDrafts, exportAll, applyPatches, queueSummary, getRecord, ID_RE };

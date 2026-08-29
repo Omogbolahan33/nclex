@@ -36,26 +36,13 @@ if (!process.env.ADMIN_KEY && SERVERLESS){
 }
 else if (!process.env.ADMIN_KEY) console.warn("[warn] ADMIN_KEY not set — using dev default");
 
-/* ── role principals (v3k): ADMIN_KEY stays break-glass admin; AUTH_KEYS adds
-   narrowly-scoped staff keys.  Format:  AUTH_KEYS="key:role:name,key:role:name"
-   roles: author · reviewer · publisher · editor (see authoring.ACTIONS).
-   Read endpoints accept any principal; writes are gated per role.            */
-const PRINCIPALS = new Map((process.env.ADMIN_KEY || !SERVERLESS)
-  ? [[ADMIN_KEY, { role:"admin", name:"admin" }]] : []);
-for (const part of (process.env.AUTH_KEYS||"").split(",")){
-  const t = part.trim(); if (!t) continue;
-  const [key, role, name] = t.split(":");
-  if (!key || !authoring.ROLES.includes(role||"")) continue;
-  if (key === ADMIN_KEY) continue; // admin key role is fixed
-  PRINCIPALS.set(key, { role, name: name || role });
-}
-const principal = req => PRINCIPALS.get(req.headers["x-admin-key"]) || null;
-const guard = (req, res, action) => {
-  const p = principal(req);
-  if (!p) { json(res, 401, { error: "valid X-Admin-Key required" }, req); return null; }
-  if (action && !authoring.can(p, action)) { json(res, 403, { error: `role '${p.role}' lacks '${action}' permission`, you:{ name:p.name, role:p.role } }, req); return null; }
-  return p;
-};
+/* ── diagnostics auth: one key, no roles.
+   This used to build a table of staff principals from AUTH_KEYS and gate each
+   write per role (author / reviewer / publisher / editor) behind the authoring
+   review pipeline. That pipeline and the admin console driving it are gone —
+   content is authored into the bank and is live immediately — so what is left
+   here only protects the read-only diagnostics endpoints.                    */
+const hasAdminKey = req => req.headers["x-admin-key"] === ADMIN_KEY;
 
 /* ── boot the engine sandbox-side (taxonomy → banks → cases → engine) ── */
 const ctx = { console, Math, JSON, Date, Set, Map, Array, Object, Number, String, parseInt, parseFloat, isNaN, setTimeout, clearTimeout };
@@ -456,7 +443,7 @@ const requestHandler = async (req,res)=>{
 
       /* ── progress sync (auth required) ── */
       /* ── admin: calibration (X-Admin-Key) ── */
-      const isAdmin = principal(req)?.role === "admin";
+      const isAdmin = hasAdminKey(req);
       if (u === "/api/admin/calibrate" && req.method==="POST"){
         if (!isAdmin) return json(res,401,{error:"admin key required"},req);
         const responses = [...D.responses, ...Object.values(D.users).flatMap(x=>x.responses||[])];
@@ -477,67 +464,16 @@ const requestHandler = async (req,res)=>{
         calibrate.reset(NC); delete D.calibration; store.saveNow();
         return json(res,200,{ ok:true, restored:"authored difficulty" },req);
       }
-      /* ── admin: authoring & review workflow (X-Admin-Key) ── */
-      const AID = u.startsWith("/api/admin/items/") ? u.slice("/api/admin/items/".length).split("/") : null;
-      if (u === "/api/admin/items" && req.method==="POST"){
-        const actor = guard(req, res, "edit"); if (!actor) return;
-        const b = await body(req);
-        const r = authoring.createDraft(NC, D, b.item, b.note, actor);
-        if (r.forbidden) return json(res,403,{error:"not permitted for role '"+actor.role+"'", errors:r.errors},req);
-        if (r.errors) return json(res,400,{error:"validation failed", errors:r.errors},req);
-        store.saveNow(); return json(res,200,{ record:r.record },req);
-      }
-      if (u === "/api/admin/items" && req.method==="GET"){
-        const actor = guard(req, res, "read"); if (!actor) return;
-        return json(res,200,{ you:{ name:actor.name, role:actor.role }, queue: authoring.queueSummary(D),
-          bank:{ count:NC.BANK.length, patched:Object.keys(D.bankPatches||{}) },
-          statuses: authoring.STATUSES, transitions: authoring.TRANSITIONS },req);
-      }
-      if (AID && AID.length===1 && req.method==="GET"){          // /api/admin/items/:id
-        const actor = guard(req, res, "read"); if (!actor) return;
-        const rec = authoring.getRecord(D, decodeURIComponent(AID[0]));
-        if (!rec) return json(res,404,{error:"no record for "+AID[0]},req);
-        return json(res,200,{ record:rec },req);
-      }
-      if (AID && AID.length===1 && req.method==="PUT"){          // edit draft
-        const actor = guard(req, res, "edit"); if (!actor) return;
-        const b = await body(req);
-        const r = authoring.updateDraft(NC, D, decodeURIComponent(AID[0]), b.item, b.note, actor);
-        if (r.forbidden) return json(res,403,{error:"not permitted for role '"+actor.role+"'", errors:r.errors},req);
-        if (r.errors) return json(res,400,{error:"cannot update", errors:r.errors},req);
-        store.saveNow(); return json(res,200,{ record:r.record },req);
-      }
-      if (AID && AID.length===2 && AID[1]==="transition" && req.method==="POST"){
-        const actor = guard(req, res, null); if (!actor) return; // action decided by target state inside authoring.transition
-        const b = await body(req);
-        const r = authoring.transition(NC, D, decodeURIComponent(AID[0]), String(b.to||""), b.note, actor);
-        if (r.forbidden) return json(res,403,{error:"not permitted for role '"+actor.role+"'", errors:r.errors},req);
-        if (r.errors) return json(res,400,{error:"transition rejected", errors:r.errors},req);
-        store.saveNow(); return json(res,200,{ record:r.record, bankCount:NC.BANK.length },req);
-      }
-      if (u === "/api/admin/import" && req.method==="POST"){
-        const actor = guard(req, res, "edit"); if (!actor) return;
-        const b = await body(req);
-        if (!Array.isArray(b.items) || b.items.length>500) return json(res,400,{error:"items must be an array (≤500)"},req);
-        const r = authoring.importDrafts(NC, D, b.items, b.note, actor);
-        if (r.forbidden) return json(res,403,{error:"not permitted for role '"+actor.role+"'", errors:r.errors.map(e=>e.errors.join("; "))},req);
-        store.saveNow(); return json(res,200, r, req);
-      }
-      if (u === "/api/admin/export"){
-        if (!isAdmin) return json(res,401,{error:"admin key required"},req);
-        return json(res,200, authoring.exportAll(NC, D), req);
-      }
       if (u === "/api/admin/distractors" && req.method==="GET"){
-        const actor = guard(req, res, "read"); if (!actor) return;
+        if (!isAdmin) return json(res,401,{error:"admin key required"},req);
         const responses = [...D.responses, ...Object.values(D.users).flatMap(x=>x.responses||[])];
         return json(res,200, calibrate.distractors(responses, NC.allItems()), req);
       }
       if (u === "/api/admin/duplicates" && req.method==="GET"){
-        const actor = guard(req, res, "read"); if (!actor) return;
+        if (!isAdmin) return json(res,401,{error:"admin key required"},req);
         const idx = NC.duplicateIndex(true);
         const stemOf = q => String((q&&q.stem)||"").slice(0,140);
         return json(res,200,{
-          you:{ name:actor.name, role:actor.role },
           clusters: idx.clusters.length,
           items: idx.clusters.reduce((a,c)=>a+c.ids.length,0),
           sameContent: idx.exact.map(ids=>({ ids, stem: stemOf(NC.BANK.find(q=>q.id===ids[0])) })),
@@ -545,11 +481,6 @@ const requestHandler = async (req,res)=>{
           detail: idx.clusters.map(c=>({ ids:c.ids, reasons:c.reasons, stem: stemOf(NC.BANK.find(q=>q.id===c.ids[0])) })),
           note:"duplicates are linked into one constraint group — at most one member is served per exam/session; nothing is deleted"
         }, req);
-      }
-      if (u === "/api/admin/versions" && req.method==="GET"){
-        const actor = guard(req, res, "read"); if (!actor) return;
-        return json(res,200,{ versions: Object.values(D.authoring||{})
-          .map(r=>({qid:r.qid, version:r.version, status:r.status, events:r.history.length})) },req);
       }
       if (u === "/api/track" && req.method==="POST"){
         if (!user) return json(res,401,{error:"not signed in"},req);
@@ -563,20 +494,6 @@ const requestHandler = async (req,res)=>{
           theta:user.theta, thetaN:user.thetaN, seen:user.seen||{} }, req);
       }
       return json(res,404,{error:"no such endpoint"},req);
-    }
-    if (u === "/admin" || u === "/admin/"){
-      return fs.readFile(path.join(ROOT,"admin","index.html"),(e,buf)=>{
-        if (e){ res.writeHead(500); return res.end("admin UI missing"); }
-        res.writeHead(200,{"Content-Type":"text/html","Cache-Control":"no-cache"}); res.end(buf);
-      });
-    }
-    if (u === "/admin/admin.js" || u === "/admin/admin.css"){
-      const f = u.slice("/admin/".length);
-      const types = { "admin.js":"text/javascript", "admin.css":"text/css" };
-      return fs.readFile(path.join(ROOT,"admin",f),(e,buf)=>{
-        if (e){ res.writeHead(404); return res.end("not found"); }
-        res.writeHead(200,{"Content-Type":types[f],"Cache-Control":"no-cache"}); res.end(buf);
-      });
     }
     return serveStatic(req,res,u);
   }catch(e){ logError("request", e); return json(res,500,{error:"server error"},req); }
