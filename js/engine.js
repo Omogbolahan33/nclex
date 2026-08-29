@@ -144,7 +144,6 @@ const shuffle = a => { a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.
    Rules: (1) never serve two members of one group in the same exam/session;
           (2) when re-testing a concept, rotate to the least-exposed member.   */
 const seenCount = qid => (S().seen[qid]||0);
-NC.exposure = qid => seenCount(qid);
 
 /* ── duplicate content detection ──────────────────────────────────────────
    A bank (especially one seeded/imported into a database) can hold the same
@@ -261,11 +260,6 @@ NC.variantGroups = function(){
   NC.allItems().forEach(q=>{ const gid = NC.groupOf(q); if (gid) (g[gid] ||= []).push(q.id); });
   return g;
 };
-/* within a shuffled pool, order same-group items least-exposed first (stable) */
-const freshestFirst = arr => arr.sort((a,b)=>{
-  const ga = NC.groupOf(a), gb = NC.groupOf(b);
-  return (ga && ga===gb) ? seenCount(a.id)-seenCount(b.id) : 0;
-});
 /* shuffle, then stable-sort by lifetime exposure: never-seen items first,
    then once-seen, … Ties keep the random order. This is what makes "practice
    again" hand out NEW items instead of recycling the ones already answered. */
