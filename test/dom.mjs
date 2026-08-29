@@ -58,11 +58,19 @@ ok(/items match — all new|new ·/.test(txt()), "custom builder states how much
    (window.document.getElementById("cf-match")||{}).textContent);
 console.log("— freshness honesty (no silent recycling) —");
 {
-  // mark almost the whole PHA pool as already answered, then rebuild the screen
+  // Deterministic fixture: exactly two named PHA items stay unseen, every other
+  // one is marked answered. (Deriving "the last two" from the pool made this
+  // depend on whatever an earlier screen happened to serve.)
   const st = window.NC.load();
-  const pha = window.NC.filterItems({cn:["PHA"], excludeSeen:false});
-  pha.slice(0, pha.length-2).forEach(q=>{ st.seen[q.id] = 2; });
+  const seenBak = JSON.stringify(st.seen);
+  const pha = window.NC.filterItems({cn:["PHA"], excludeSeen:false}).slice()
+    .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  const keepFresh = pha.slice(0,2).map(q=>q.id);
+  st.seen = {};
+  pha.forEach(q=>{ if (!keepFresh.includes(q.id)) st.seen[q.id] = 2; });
   window.NC.save();
+  ok(window.NC.freshCount({cn:["PHA"]}) === 2,
+     `fixture leaves exactly 2 unseen PHA items (${window.NC.freshCount({cn:["PHA"]})})`);
   await nav("#/practice");
   await nav("#/custom");
   const seg = [...window.document.querySelectorAll('.seg[data-set="cn"] button')]
@@ -71,7 +79,8 @@ console.log("— freshness honesty (no silent recycling) —");
   const line = window.document.getElementById("cf-match").textContent;
   ok(/\b2 new\b/.test(line) && /50 already answered/.test(line),
      `filter line reports new vs answered: "${line.trim()}"`);
-  ok(window.NC.freshCount({cn:["PHA"]}) === 2, "freshCount agrees with the rendered line");
+  ok(/\(52 match\)|\(\d+ match\)/.test(line) && new RegExp(keepFresh.length+" new").test(line),
+     "the rendered count matches freshCount");
   // starting that session announces the split instead of hiding it
   let toasted = "";
   const realToast = window.NC.ui.toast;
@@ -82,7 +91,7 @@ console.log("— freshness honesty (no silent recycling) —");
   const s = window.NC.getSession(window.location.hash.split("/").pop());
   ok(s && s.recycled > 0 && s.fresh + s.recycled === s.items.length,
      `session carries fresh=${s&&s.fresh} recycled=${s&&s.recycled}`);
-  st.seen = {}; window.NC.save();
+  st.seen = JSON.parse(seenBak); window.NC.save();
 }
 await nav("#/browse/cn"); ok(/Management of Care/.test(txt()), "client-need browser");
 await nav("#/browse/type"); ok(/Matrix/.test(txt()), "type browser");

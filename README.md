@@ -11,7 +11,7 @@ and answer keys that never leave the server.
 npm i jsdom            # once per environment (dev dependency for the DOM test)
 npm run build          # build standalone.html + public/ (key-free app)
 npm start              # exam server on :3000
-npm test               # engine/bank smoke (1572) + DOM (96) + admin (35) + store (32) + demo (1214)
+npm test               # engine/bank smoke (1572) + DOM (97) + admin (35) + store (32) + demo (1214)
 npm run test:api       # API/security/authoring/PWA/hardening suite (~140, CAT-length dependent) — needs `npm start` running
 npm run lint           # item-writing gate + duplicate-content scan of the bank
 npm run calibrate      # item calibration report from the response log (--apply to persist)
@@ -62,7 +62,7 @@ store-pg.js      Postgres adapter v2 (PER-TABLE NORMALIZED): users · tokens ·
                  flush + automatic v1 document migration; identical interface; `npm i pg`
 schema.sql       Postgres DDL v2: normalized tables (users, tokens, responses,
                  sims, seen, authoring_records, bank_patches, meta) + v1 migration
-test/            smoke (1572) · dom (96) · admin (35) · store (32) · demo (1214) · api (~140, CAT-length dependent) — 3,090+ checks total
+test/            smoke (1572) · dom (97) · admin (35) · store (32) · demo (1214) · api (~140, CAT-length dependent) — 3,090+ checks total
 ```
 
 ## Feature set
