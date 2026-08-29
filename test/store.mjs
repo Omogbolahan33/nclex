@@ -182,6 +182,26 @@ console.log("— Postgres adapter v2 (normalized, in-memory fake pg) —");
   await storePg.loadAsync();
   ok(d2.users["b@x.com"] && d2.responses.length===2, "boot #2 rebuilds from normalized tables alone");
 
+  /* per-user exposure history (v3o): `seen` rides inside users.profile, so a
+     second device that signs in gets the items its owner already answered and
+     stops being re-served them. This is per-user and must NOT be confused with
+     the global `seen` table, which drives sim exposure control. */
+  d2.users["c@x.com"] = { email:"c@x.com", hash:"h", salt:"s", profile:{ name:"C" },
+                          responses:[], seen:{ "MOC-001":3, "PHA-007":1 }, theta:0.4, thetaN:5 };
+  await storePg.saveNow();
+  ok(db.users["c@x.com"] && db.users["c@x.com"].profile.seen
+     && db.users["c@x.com"].profile.seen["MOC-001"]===3,
+     "flush writes the per-user seen map into users.profile");
+  ok(!db.users["c@x.com"].profile.hash && !db.users["c@x.com"].profile.salt,
+     "credentials stay out of the profile column");
+  storePg._reset();
+  const d2b = storePg.load();
+  await storePg.loadAsync();
+  ok(d2b.users["c@x.com"] && d2b.users["c@x.com"].seen
+     && d2b.users["c@x.com"].seen["MOC-001"]===3 && d2b.users["c@x.com"].seen["PHA-007"]===1,
+     "boot rebuilds the per-user seen map (exposure history survives a restart)");
+  ok(d2b.seen["MOC-001"]===7, "the global exposure table is separate and untouched");
+
   /* content bank: items/cases tables are READ into the doc, and never written
      back by a flush — the server must not clobber a row edited in SQL */
   db.items["MOC-001"] = { id:"MOC-001", t:"single", stem:"from the database", opts:["a","b"], ans:0 };
