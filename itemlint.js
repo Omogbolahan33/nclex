@@ -116,6 +116,35 @@ function duplicateClusters(items){
     affected: new Set([...sameContent, ...sharedStem].flat()).size };
 }
 
+/* Near-duplicate scan. duplicateClusters() is fingerprint-exact, so it passes a
+   paraphrase of an existing item — which is how 12 colliding items reached a bank
+   that reported "0 duplicates". This compares stem and key token overlap and
+   reports pairs that ask one question under two ids. Reported, not gated: the
+   threshold is heuristic and a shared stem with different options/keys is a
+   legitimate item set (the engine already enforces one-per-exam for those).   */
+function nearDuplicatePairs(items, opts){
+  const STEM = (opts&&opts.stem) || 0.45;
+  const KEY  = (opts&&opts.key)  || 0.50;
+  const STOP = new Set(["which","what","when","where","this","that","client","nurse","should","would","most","least","best","first","action","following","from","with","have","has","been","their","them","they","about","after","before","during","because","into","than","then","also","only","each","every","some","more","less","need","needs","care","report","reports","states","asks","your","you","are","was","were","will","must","does","done","giving","given","take","takes","call","calls","dose","new","day","days","hour","hours","minute","minutes","being","over","under","upon","while","both","between","against","received","receiving","prescribed","order","ordered","provide","perform","administer","administered","medication","medications","provider","clinic","hospital","unit","room","shift","history","home","time","high","low"]);
+  const toks = s => String(s||"").toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/)
+    .filter(w => w.length>=4 && !STOP.has(w));
+  const jac = (a,b) => { const A=new Set(a), B=new Set(b); let i=0;
+    A.forEach(x=>{ if(B.has(x)) i++; }); return i/((A.size+B.size-i)||1); };
+  const keyOf = q => Array.isArray(q.ans)
+    ? q.ans.map(i=>String((q.opts||[])[i])).join(" / ")
+    : String((q.opts||[])[q.ans] || "");
+  const B = (items||[]).filter(q=>q&&q.id);
+  const T = B.map(q=>toks(q.stem)), K = B.map(q=>toks(keyOf(q)));
+  const hits = [];
+  for (let i=0;i<B.length;i++) for (let j=i+1;j<B.length;j++){
+    const s = jac(T[i],T[j]);
+    if (s < STEM) continue;
+    const k = jac(K[i],K[j]);
+    if (k >= KEY) hits.push({ a:B[i].id, b:B[j].id, stem:s, key:k });
+  }
+  return hits.sort((x,y)=>(y.stem+y.key)-(x.stem+x.key));
+}
+
 function lint(items){
   const out = [];
   (items||[]).forEach(q=>{
@@ -128,7 +157,7 @@ function lint(items){
   return { items:out, hard, soft, hardCount:hard.length };
 }
 
-module.exports = { lint, lintItem, duplicateClusters,
+module.exports = { lint, lintItem, duplicateClusters, nearDuplicatePairs,
                    HARD:new Set(["stem-cue","absolute","double-negative","dup-options","rat-coverage","opt-parity"]) };
 
 /* CLI */
@@ -141,8 +170,10 @@ if (require.main === module){
   const NC=ctx.window.NC; vm.runInContext("NC.load()",ctx);
   const r = lint(NC.allItems());
   const dup = module.exports.duplicateClusters(NC.BANK);
+  const near = module.exports.nearDuplicatePairs(NC.BANK);
   console.log(`itemlint: ${NC.allItems().length} items · ${r.hardCount} HARD flags · ${r.soft.length} items with soft warnings`);
-  console.log(`duplicate scan: ${dup.exactCount} same-content cluster(s), ${dup.stemCount} shared-stem cluster(s), ${dup.affected} item(s) affected\n`);
+  console.log(`duplicate scan: ${dup.exactCount} same-content cluster(s), ${dup.stemCount} shared-stem cluster(s), ${dup.affected} item(s) affected`);
+  console.log(`paraphrase scan: ${near.length} near-duplicate pair(s) (stem ≥0.45 and key ≥0.50 overlap)\n`);
   if (r.hard.length){
     console.log("— HARD (must fix) —");
     r.hard.forEach(x=>console.log(`  ${x.id} [${x.t}]  ${x.flags.filter(f=>module.exports.HARD.has(f[0])).map(f=>f[0]+": "+f[1]).join(" | ")}`));
@@ -161,5 +192,10 @@ if (require.main === module){
     dup.sharedStem.forEach(ids=>console.log("  " + ids.join(" ~ ") + "  || " +
       String((NC.BANK.find(q=>q.id===ids[0])||{}).stem||"").slice(0,100)));
   }
-  process.exit((r.hardCount || dup.exactCount) ? 1 : 0);
+  if (near.length){
+    console.log("\n— NEAR-DUPLICATE (one question under two ids — the exact-match scan misses these) —");
+    near.forEach(p=>console.log(`  ${p.a} ~ ${p.b}  stem ${p.stem.toFixed(2)} / key ${p.key.toFixed(2)}  || ` +
+      String((NC.BANK.find(q=>q.id===p.a)||{}).stem||"").slice(0,90)));
+  }
+  process.exit((r.hardCount || dup.exactCount || near.length) ? 1 : 0);
 }

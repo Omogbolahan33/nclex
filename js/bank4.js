@@ -70,7 +70,7 @@ NC.BANK.push(
  s:"Blues: days 3–5, mild, resolves ≤2 weeks, intact function. Red flags: >2 weeks, worsening, insomnia despite baby sleeping, worthlessness, intrusive thoughts → screen + refer. Always ask about self-harm."},
  ref:"Postpartum mental health"},
 
-{id:"BCC-010", t:"single", cn:"BCC", sys:"REPI", topic:"Newborn care", d:0, b:-1.1, cj:null, tags:["teaching"],
+{id:"BCC-010", t:"single", cn:"BCC", sys:"REPI", topic:"Newborn care", d:0, b:-1.1, cj:"evaluate", tags:["teaching"],
  stem:"The nurse teaches the parent of a 3-day-old newborn about sponge bathing. Which statement indicates correct understanding?",
  opts:["“I'll give a tub bath daily to keep the cord stump clean.”","“I'll sponge-bathe until the cord stump falls off and heals, and keep the stump dry.”","“I'll clean the cord stump with alcohol at every diaper change.”","“Bathing isn't needed until the umbilical cord falls off by 6 weeks.”"],
  ans:1,
@@ -98,7 +98,7 @@ NC.BANK.push(
  s:"Antidote pairs to memorize: acetaminophen→NAC · opioids→naloxone · benzodiazepines→flumazenil · iron→deferoxamine · warfarin→vitamin K · heparin→protamine · magnesium→calcium gluconate."},
  ref:"Pediatric poisoning management"},
 
-{id:"SIC-011", t:"single", cn:"SIC", sys:"INF", topic:"Poisoning prevention", d:0, b:-1.2, cj:null, tags:["safety","teaching"],
+{id:"SIC-011", t:"single", cn:"SIC", sys:"INF", topic:"Poisoning prevention", d:0, b:-1.2, cj:"prioritize", tags:["safety","teaching"],
  stem:"The nurse teaches poisoning-prevention to parents of a 2-year-old. Which instruction is most important?",
  opts:["Store medications and cleaning products in locked cabinets, in original containers","Keep ipecac syrup on hand to induce vomiting","Store products under the sink for quick access","Rely on child-resistant caps alone"],
  ans:0,
@@ -180,7 +180,7 @@ NC.BANK.push(
  s:"Neutropenia (ANC <500): protect from organisms (no flowers/raw produce/sick contacts), HEPA/positive pressure if available, low-bacterial diet, no rectal temps/suppositories. Fever ≥38 = sepsis workup NOW."},
  ref:"Oncology care · infection prevention"},
 
-{id:"BCC-012", t:"multi", cn:"BCC", sys:"HEME", topic:"Iron deficiency anemia", d:0, b:-1.15, cj:null, tags:["teaching","medication"],
+{id:"BCC-012", t:"multi", cn:"BCC", sys:"HEME", topic:"Iron deficiency anemia", d:0, b:-1.15, cj:"generate", tags:["teaching","medication"],
  stem:"The nurse teaches a client starting oral iron sulfate for iron deficiency anemia. Which instructions are correct? Select all that apply.",
  opts:["Take iron with vitamin C (e.g., orange juice) to boost absorption","Expect stools to turn dark green or black","Take with a glass of milk to prevent stomach upset","Use a straw if liquid preparations stain teeth","Space iron at least 2 hours from calcium, antacids, and tea"],
  ans:[0,1,3,4],

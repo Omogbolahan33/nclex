@@ -192,7 +192,7 @@ NC.BANK.push(
   s:"Body image loss = grief work. Name it, normalize it, then problem-solve — information is not the intervention."},
  ref:"Psoriasis · altered body image"},
 
-{id:"PSY-022", t:"single", cn:"PSY", sys:"HEME", topic:"New leukemia diagnosis", d:2, b:0.25, cj:"take-action", tags:["leukemia","crisis-intervention","coping"],
+{id:"PSY-022", t:"single", cn:"PSY", sys:"HEME", topic:"New leukemia diagnosis", d:2, b:0.25, cj:"act", tags:["leukemia","crisis-intervention","coping"],
  stem:"A client newly diagnosed with acute leukemia stares at the floor and says, \"This doesn't feel real. My whole life just changed in one phone call.\" Which action should the nurse take first?",
  opts:["Sit with the client and encourage expression of feelings about the diagnosis at the client's pace",
   "Provide a detailed overview of the induction chemotherapy protocol",
@@ -238,7 +238,7 @@ NC.BANK.push(
   s:"Every infection discharge needs: finish the antibiotic, elevate, and exact return triggers tied to the marked border."},
  ref:"Cellulitis · discharge criteria"},
 
-{id:"BCC-022", t:"single", cn:"BCC", sys:"REN", topic:"Interpreter use", d:1, b:0.0, cj:"take-action", tags:["interpreter","health-literacy","ckd"], variantGroup:"ckd-diet",
+{id:"BCC-022", t:"single", cn:"BCC", sys:"REN", topic:"Interpreter use", d:1, b:0.0, cj:"act", tags:["interpreter","health-literacy","ckd"], variantGroup:"ckd-diet",
  stem:"A Spanish-speaking client on fluid restriction is being taught about a new kidney diet through a professional interpreter. Which action best verifies understanding before the session ends?",
  opts:["Ask the client to describe tomorrow's planned meals and drinks in their own words, with the interpreter translating",
   "Hand over printed diet materials in Spanish and document that education was completed",
@@ -360,7 +360,7 @@ NC.BANK.push(
   s:"Bruit + thrill = alive. No-sound-plus-mass or tracking inflammation = hold and call. Never cannulate a quiet fistula."},
  ref:"Hemodialysis access · complication detection"},
 
-{id:"RRP-034", t:"single", cn:"RRP", sys:"REN", topic:"Urinary retention", d:1, b:0.0, cj:"take-action", tags:["retention","bph","bladder-scan"],
+{id:"RRP-034", t:"single", cn:"RRP", sys:"REN", topic:"Urinary retention", d:1, b:0.0, cj:"act", tags:["retention","bph","bladder-scan"],
  stem:"Four hours after a cystoscopy under sedation, an older adult man with benign prostatic hyperplasia has not voided, reports suprapubic fullness, and is restless. Which action should the nurse take first?",
  opts:["Perform a bladder scan at the bedside to measure the retained volume",
   "Encourage the client to drink two large glasses of water quickly",

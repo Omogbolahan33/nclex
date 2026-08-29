@@ -95,7 +95,7 @@ NC.BANK.push(
  s:"START triage: walk = green; respiratory effort after airway = red/black; perfusion (radial pulse, cap refill) and mental status sort red vs yellow. In MCIs you do the greatest good for the greatest number."},
  ref:"Emergency response · mass casualty triage"},
 
-{id:"SIC-010", t:"single", cn:"SIC", sys:"INF", topic:"Sharps safety", d:0, b:-1.2, cj:null, tags:["safety"],
+{id:"SIC-010", t:"single", cn:"SIC", sys:"INF", topic:"Sharps safety", d:0, b:-1.2, cj:"act", tags:["safety"],
  stem:"After administering an IM injection with a safety-engineered syringe, which action prevents needlestick injury?",
  opts:["Recap the needle using a two-handed scooping method","Activate the safety device and dispose of the syringe immediately in the sharps container","Place the uncapped syringe on the tray for later disposal by environmental services","Break the needle off before disposal"],
  ans:1,
@@ -132,7 +132,7 @@ NC.BANK.push(
  s:"Erikson ladder: trust (infant) → autonomy (toddler) → initiative (preschool) → industry (school-age) → identity (teen) → intimacy (young adult)."},
  ref:"Developmental theories · Erikson"},
 
-{id:"HPM-008", t:"single", cn:"HPM", sys:"INF", topic:"Adolescent safety", d:1, b:-0.45, cj:null, tags:["teaching","safety"],
+{id:"HPM-008", t:"single", cn:"HPM", sys:"INF", topic:"Adolescent safety", d:1, b:-0.45, cj:"generate", tags:["teaching","safety"],
  stem:"During a health-promotion visit, which teaching point addresses the LEADING cause of death in adolescents?",
  opts:["Increase calcium intake to prevent early osteoporosis","Wear sunscreen with SPF 30 or higher","Avoid riding in vehicles with drivers who are texting or impaired","Get adequate sleep on school nights"],
  ans:2,
@@ -141,7 +141,7 @@ NC.BANK.push(
  s:"Adolescent exam priorities: motor-vehicle safety, firearms, substance use, sexual health, mental health/suicide screening."},
  ref:"Adolescent health promotion"},
 
-{id:"HPM-009", t:"single", cn:"HPM", sys:"MSK", topic:"Osteoporosis screening", d:0, b:-1.1, cj:null, tags:["teaching","assessment"],
+{id:"HPM-009", t:"single", cn:"HPM", sys:"MSK", topic:"Osteoporosis screening", d:0, b:-1.1, cj:"generate", tags:["teaching","assessment"],
  stem:"A 66-year-old asks when to be screened for osteoporosis. The nurse's best response is based on which guideline?",
  opts:["Bone density (DXA) screening for all women beginning at age 65","DXA screening only after a fracture occurs","Calcium blood levels annually after menopause","DXA screening for all adults beginning at age 40"],
  ans:0,
@@ -159,7 +159,7 @@ NC.BANK.push(
  s:"Normal pregnancy skin changes: linea nigra, melasma, striae, spider angiomas. Reassure; no treatment."},
  ref:"Normal pregnancy physiology"},
 
-{id:"HPM-011", t:"single", cn:"HPM", sys:"REPI", topic:"Testicular self-exam", d:0, b:-1.05, cj:null, tags:["teaching","assessment"],
+{id:"HPM-011", t:"single", cn:"HPM", sys:"REPI", topic:"Testicular self-exam", d:0, b:-1.05, cj:"generate", tags:["teaching","assessment"],
  stem:"The nurse teaches a 19-year-old man about testicular self-examination. Which instruction is correct?",
  opts:["Perform the exam monthly, ideally during or right after a warm shower","Perform the exam once a year after age 40","Perform the exam immediately after strenuous exercise","Avoid the exam unless a lump is felt first"],
  ans:0,
@@ -272,7 +272,7 @@ NC.BANK.push(
  s:"Ostomy math: ileostomy loses fluid + electrolytes (K+, Na+, Mg) — high output = dehydration + dysrhythmia risk. Colostomy output is formed; ileostomy is liquid."},
  ref:"Ostomy care · high-output stoma"},
 
-{id:"BCC-008", t:"single", cn:"BCC", sys:"NEURO", topic:"Nonpharmacologic pain", d:0, b:-1.25, cj:null, tags:["teaching","intervention"],
+{id:"BCC-008", t:"single", cn:"BCC", sys:"NEURO", topic:"Nonpharmacologic pain", d:0, b:-1.25, cj:"recognize", tags:["teaching","intervention"],
  stem:"Which intervention is an example of a nonpharmacologic adjuvant therapy for chronic back pain?",
  opts:["Scheduled acetaminophen","Guided imagery with progressive muscle relaxation","Epidural steroid injection","Transcutaneous patches containing lidocaine"],
  ans:1,

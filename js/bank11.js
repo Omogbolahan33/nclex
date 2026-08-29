@@ -195,20 +195,24 @@ NC.BANK.push(
   s:"Shock shows up as a rising pulse before a falling pressure. Trust the trend, not the single value."},
  ref:"Postoperative care · hemorrhage recognition"},
 
-{id:"RRP-044", t:"single", cn:"RRP", sys:"RESP", topic:"Chest tube dislodgement", d:3, b:0.45, cj:"act", tags:["chest-tube","pneumothorax","emergency"],
- stem:"A client's chest tube becomes completely disconnected from the drainage system. Which action should the nurse take immediately?",
- opts:["Place the distal end of the tube into a bottle of sterile water",
-  "Clamp the tube close to the insertion site and call for help",
-  "Reconnect the tube once a replacement drainage system arrives",
-  "Cover the insertion site firmly with a dry gauze dressing"],
+/* Rewritten: this item previously restated RRP-002 (chest tube disconnected from
+   the drainage system → improvise a water seal) with a different stem wording and
+   the same key. A paraphrase is a different fingerprint, so the exact-match
+   duplicate scan passed it while both items asked one question. */
+{id:"RRP-044", t:"single", cn:"RRP", sys:"RESP", topic:"Tracheostomy tube displacement", d:3, b:0.45, cj:"act", tags:["tracheostomy","airway","emergency"],
+ stem:"Two days after a tracheostomy, a client's tracheostomy tube is accidentally expelled during repositioning. Which action does the nurse take first?",
+ opts:["Call for help and attempt to reinsert a spare tube of the same size",
+  "Cover the stoma with a sterile gauze and have the client breathe through the nose",
+  "Wait for the respiratory therapist to arrive before acting",
+  "Suction the stoma deeply and then reinsert the tube"],
  ans:0,
- rat:{c:"Submerging the disconnected end two centimeters below sterile water recreates the water seal and lets air escape while preventing air from re-entering the pleural space. Clamping risks tension pneumothorax if an air leak is present.",
-  o:["Correct — an improvised water seal restores one-way drainage.",
-    "Clamping can convert a simple pneumothorax into a tension pneumothorax.",
-    "Waiting for equipment leaves the pleural space open to air.",
-    "The insertion site is still sealed by the tube; the leak is at the connection."],
-  s:"Chest tube disconnected = improvise a water seal. Dislodged from the chest = occlusive dressing."},
- ref:"Thoracic drainage · emergency management"},
+ rat:{c:"The tract is immature for roughly the first week, so an expelled tube leaves a stoma that narrows and closes quickly. The nurse summons help and immediately attempts reinsertion with the obturator and a same-size spare, because waiting for another clinician can cost the airway.",
+  o:["Correct — re-establish the airway now with a same-size spare tube and obturator.",
+    "Relying on nasal breathing abandons a client whose upper airway may not be patent.",
+    "Waiting risks stoma closure and loss of the airway.",
+    "Deep suctioning delays reinsertion and can traumatize an immature tract."],
+  s:"Accidental decannulation in a fresh tracheostomy: call for help and reinsert a same-size spare tube immediately."},
+ ref:"Airway · tracheostomy emergencies"},
 
 {id:"RRP-045", t:"single", cn:"RRP", sys:"NEURO", topic:"Increased intracranial pressure", d:3, b:0.5, cj:"analyze", tags:["icp","neuro","positioning"],
  stem:"A client with a closed head injury has an intracranial pressure of 24 mm Hg. Which nursing intervention is most appropriate?",

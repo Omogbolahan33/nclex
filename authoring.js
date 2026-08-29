@@ -119,7 +119,11 @@ function validateItem(q, NC){
     }
     case "hotspot": {
       const h = q.hotspot;
-      if (!h || (h.mode!=="row" && h.mode!=="cell")) errs.push("hotspot: mode must be 'row' or 'cell'");
+      /* mode is advisory metadata — no renderer branches on it, js/engine.js only
+         folds it into the duplicate fingerprint. The bank ships "rows"; accept the
+         singular spelling too so older drafts keep validating. */
+      const MODES = ["row", "rows", "cell", "cells"];
+      if (!h || !MODES.includes(h.mode)) errs.push("hotspot: mode must be 'row(s)' or 'cell(s)'");
       else if (!Array.isArray(h.rows) || h.rows.length < 2) errs.push("hotspot: ≥2 rows required");
       else if (!Array.isArray(h.ans) || !h.ans.length || !h.ans.every(a=>intIn(a,0,h.rows.length-1)))
         errs.push("hotspot: ans must list valid row indices");

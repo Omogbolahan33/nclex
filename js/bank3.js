@@ -49,7 +49,7 @@ NC.BANK.push(
  s:"Steroid teaching set: taper (never stop), take with food in the morning, watch glucose/pressure/weight, infection signs may be masked, never stop steroids during illness/without guidance."},
  ref:"Glucocorticoid therapy · adrenal suppression"},
 
-{id:"PHA-022", t:"single", cn:"PHA", sys:"RESP", topic:"Bronchodilator side effects", d:0, b:-1.2, cj:null, tags:["medication","teaching"],
+{id:"PHA-022", t:"single", cn:"PHA", sys:"RESP", topic:"Bronchodilator side effects", d:0, b:-1.2, cj:"act", tags:["medication","teaching"],
  stem:"A client newly prescribed an albuterol inhaler reports feeling jittery with a heart rate of 104/min after use. Which response by the nurse is best?",
  opts:["This is an emergency — call 911","Tremor and mild tachycardia are common expected effects and often improve with continued use","Stop the medication immediately — you are allergic","Double the albuterol dose next time to overcome the tremor"],
  ans:1,
@@ -67,7 +67,7 @@ NC.BANK.push(
  s:"Metformin pearls: hold with contrast (lactic acidosis), monitor renal function, take with meals (GI upset), watch for B12 deficiency long-term. Hold in dehydration/sepsis/serious illness."},
  ref:"Antidiabetics · metformin & contrast"},
 
-{id:"PHA-024", t:"single", cn:"PHA", sys:"REN", topic:"IV drip calculation", d:1, b:-0.35, cj:null, tags:["calculation","intervention"],
+{id:"PHA-024", t:"single", cn:"PHA", sys:"REN", topic:"IV drip calculation", d:1, b:-0.35, cj:"act", tags:["calculation","intervention"],
  stem:"The provider orders 1,000 mL of 0.9% sodium chloride over 12 hours. The tubing delivers 15 gtt/mL. At how many gtt/min should the nurse set the manual infusion?",
  opts:["13 gtt/min","21 gtt/min","31 gtt/min","42 gtt/min"],
  ans:1,
@@ -76,7 +76,7 @@ NC.BANK.push(
  s:"Manual rate: (volume × gtt factor) ÷ minutes. Check: 1,000 mL ÷ 12 h = 83 mL/hr; 83 × 15 ÷ 60 ≈ 21 gtt/min."},
  ref:"IV flow rate calculation"},
 
-{id:"PHA-025", t:"single", cn:"PHA", sys:"REPI", topic:"Pediatric weight-based dosing", d:1, b:-0.3, cj:null, tags:["calculation","medication","safety"],
+{id:"PHA-025", t:"single", cn:"PHA", sys:"REPI", topic:"Pediatric weight-based dosing", d:1, b:-0.3, cj:"act", tags:["calculation","medication","safety"],
  stem:"A toddler weighing 12 kg needs acetaminophen 15 mg/kg/dose PO. The suspension is 160 mg/5 mL. How many mL per dose should the nurse administer? (Round to the nearest tenth.)",
  opts:["4.2 mL","5.6 mL","8.4 mL","11.2 mL"],
  ans:1,

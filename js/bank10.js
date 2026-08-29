@@ -215,7 +215,7 @@ NC.BANK.push(
  ref:"Cancer screening · colorectal start age"},
 
 /* ── Psychosocial Integrity (PN 12%) ───────────────────────────────── */
-{id:"PSY-027", t:"single", cn:"PSY", sys:"NEURO", topic:"Dementia communication", d:1, b:0.05, cj:"take-action", fam:"PN", tags:["dementia","validation","communication"],
+{id:"PSY-027", t:"single", cn:"PSY", sys:"NEURO", topic:"Dementia communication", d:1, b:0.05, cj:"act", fam:"PN", tags:["dementia","validation","communication"],
  stem:"A resident with advanced dementia paces the hallway each evening saying, “I have to get home to cook dinner for the children.” Which response is most therapeutic?",
  opts:["“Your children are grown now. Let's look at these family photos together and get ready for bed.”",
   "“You tell me that every night — your children are nowhere nearby, remember?”",
@@ -230,7 +230,7 @@ NC.BANK.push(
   s:"Late-dementia communication: join the feeling, then steer. Correcting the facts is for early stages; comfort outranks accuracy at this stage."},
  ref:"Dementia care · validation and redirection"},
 
-{id:"PSY-028", t:"single", cn:"PSY", sys:"PSYCH", topic:"Family adjustment to placement", d:1, b:0.1, cj:"take-action", fam:"PN", tags:["ltc","family","guilt","communication"],
+{id:"PSY-028", t:"single", cn:"PSY", sys:"PSYCH", topic:"Family adjustment to placement", d:1, b:0.1, cj:"act", fam:"PN", tags:["ltc","family","guilt","communication"],
  stem:"The daughter of a newly placed nursing-home resident says, “I promised Mom I'd never put her in a home. I feel like I failed her.” Which response by the nurse is most therapeutic?",
  opts:["“It sounds like this decision weighs heavily on you. Would you like to talk about what made placement necessary now?”",
   "“At least your mother is getting better care here than she would at home alone.”",
@@ -258,7 +258,7 @@ NC.BANK.push(
   s:"Three D's in a line: Delirium = days + attention + fluctuation; Dementia = years + memory; Depression = mood first, concentration complaints, intact orientation."},
  ref:"Cognitive impairment · delirium versus dementia"},
 
-{id:"PSY-030", t:"single", cn:"PSY", sys:"NEURO", topic:"Bath refusal in dementia", d:1, b:0.0, cj:"take-action", fam:"PN", tags:["dementia","adl","approach"],
+{id:"PSY-030", t:"single", cn:"PSY", sys:"NEURO", topic:"Bath refusal in dementia", d:1, b:0.0, cj:"act", fam:"PN", tags:["dementia","adl","approach"],
  stem:"A resident with moderate dementia refuses the scheduled shower, backing away and saying “no” loudly. Which approach should the nurse use?",
  opts:["Defer the shower, offer a relaxing alternative activity now, and retry later in the shift",
   "Proceed quickly with the shower anyway since it is the scheduled care time",

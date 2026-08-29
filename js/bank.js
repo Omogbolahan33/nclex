@@ -119,7 +119,7 @@ NC.BANK = [
  s:"Gross-motor ladder: 12–15 mo walk → 18 mo stairs w/ help → 2 yr run/both-feet jump → 3 yr tricycle → 4 yr hop → 5 yr skip."},
  ref:"Pediatric developmental milestones"},
 
-{id:"HPM-003", t:"single", cn:"HPM", sys:"GI", topic:"Screening", d:0, b:-1.0, cj:null, tags:["teaching"],
+{id:"HPM-003", t:"single", cn:"HPM", sys:"GI", topic:"Screening", d:0, b:-1.0, cj:"generate", tags:["teaching"],
  stem:"During a primary care visit, a client with no family history of colorectal cancer asks when colorectal cancer screening should begin. What is the nurse's best response?",
  opts:["At age 40","At age 45","At age 50","Only if symptoms develop"],
  ans:1,
@@ -184,7 +184,7 @@ NC.BANK = [
  s:"Sodium rule for HF: fresh is best; avoid anything cured, canned, instant, brined, or from a drive-through."},
  ref:"Nutrition · therapeutic diets"},
 
-{id:"BCC-002", t:"single", cn:"BCC", sys:"MSK", topic:"Pain management", d:0, b:-1.25, cj:null, tags:["medication","teaching"],
+{id:"BCC-002", t:"single", cn:"BCC", sys:"MSK", topic:"Pain management", d:0, b:-1.25, cj:"act", tags:["medication","teaching"],
  stem:"A client with chronic cancer pain reports persistent pain between doses of prescribed PRN opioid analgesics. Which action is best?",
  opts:["Instruct the client to take the analgesics only when the pain becomes severe","Collaborate with the provider to administer analgesics on a scheduled (around-the-clock) basis","Tell the client to double the PRN dose independently","Switch to nonpharmacologic measures only"],
  ans:1,
@@ -193,7 +193,7 @@ NC.BANK = [
  s:"Chronic/persistent pain → scheduled ATC dosing (+ PRN breakthrough). Acute pain → PRN is acceptable. Never “wait until severe.”"},
  ref:"Pain management principles"},
 
-{id:"BCC-003", t:"single", cn:"BCC", sys:"GI", topic:"Nutrition · fiber", d:0, b:-1.15, cj:null, tags:["teaching"],
+{id:"BCC-003", t:"single", cn:"BCC", sys:"GI", topic:"Nutrition · fiber", d:0, b:-1.15, cj:"generate", tags:["teaching"],
  stem:"The nurse is helping a client with chronic constipation choose high-fiber foods. Which selection is best?",
  opts:["White rice and cheese omelet","Oatmeal with raspberries and a pear","Clear broth and white toast","Boiled eggs and applesauce"],
  ans:1,
@@ -258,7 +258,7 @@ NC.BANK = [
  s:"Rapid (lispro/aspart) covers meals; Regular is the only clear-drawn-first insulin when mixing; NPH is cloudy; glargine/detemir are once-daily basals — never mix glargine."},
  ref:"Insulin pharmacology"},
 
-{id:"PHA-006", t:"single", cn:"PHA", sys:"INF", topic:"Dosage calculation", d:1, b:-0.15, cj:null, tags:["calculation","medication"],
+{id:"PHA-006", t:"single", cn:"PHA", sys:"INF", topic:"Dosage calculation", d:1, b:-0.15, cj:"act", tags:["calculation","medication"],
  stem:"A child weighing 18 kg is prescribed amoxicillin 25 mg/kg/day PO divided every 12 hours. The suspension is 250 mg/5 mL. How many mL should the nurse administer per dose? (Round to the nearest tenth.)",
  opts:["2.3 mL","4.5 mL","9.0 mL","5.4 mL"],
  ans:1,
@@ -267,7 +267,7 @@ NC.BANK = [
  s:"Calculation ladder: mg/kg → per-day total → ÷ doses per day → ÷ concentration. Use the on-screen calculator; write each step down."},
  ref:"Pediatric dosage calculation"},
 
-{id:"PHA-007", t:"single", cn:"PHA", sys:"REN", topic:"IV therapy", d:1, b:-0.55, cj:null, tags:["calculation","intervention"],
+{id:"PHA-007", t:"single", cn:"PHA", sys:"REN", topic:"IV therapy", d:1, b:-0.55, cj:"act", tags:["calculation","intervention"],
  stem:"The provider orders 1,000 mL of 0.9% sodium chloride to infuse over 8 hours. The nurse sets the infusion pump to deliver how many mL per hour?",
  opts:["100 mL/hr","125 mL/hr","150 mL/hr","80 mL/hr"],
  ans:1,
@@ -314,7 +314,7 @@ NC.BANK = [
  s:"Highlight tasks: hunt for CHANGE (trends), ABC threats (rate, rhythm, airway, breath sounds), and perfusion markers (BP, urine output). Expected findings are distractors."},
  ref:"Vital sign trends & nurse's notes"},
 
-{id:"RRP-005", t:"single", cn:"RRP", sys:"GI", topic:"Enteral tubes", d:1, b:-0.35, cj:null, tags:["safety","intervention"],
+{id:"RRP-005", t:"single", cn:"RRP", sys:"GI", topic:"Enteral tubes", d:1, b:-0.35, cj:"act", tags:["safety","intervention"],
  stem:"Before the first feeding through a newly placed nasogastric tube, which method is most reliable for verifying tube placement?",
  opts:["Auscultating a whoosh of air over the stomach","Testing the pH of aspirated gastric secretions","Obtaining an abdominal x-ray","Checking for bubbles when the tip is placed in water"],
  ans:2,

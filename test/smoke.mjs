@@ -1,5 +1,6 @@
 /* Smoke test: loads the app scripts in a bare Node context and exercises the engine. */
 import fs from "fs"; import path from "path"; import vm from "vm";
+import { createRequire } from "module";
 const root = path.resolve(process.cwd());
 const { contentFiles } = await import("../content.js");
 const files = ["js/taxonomy.js", ...contentFiles(root).all, "js/engine.js"];
@@ -116,6 +117,28 @@ console.log("— authoring workflow (draft → review → approved → published
   ok(A.validateItem({...base,rat:{}},NC).length>=2, "missing rationales rejected");
   ok(A.validateItem({...base,t:"drag",drag:{targets:["A","B"],opts:["x"],ans:[0,5]}},NC).length>0, "malformed drag rejected");
   ok(A.validateItem({...base,t:"matrix",matrix:{cols:["y","n"],rows:["r1","r2"],ans:[0]}},NC).length>0, "short matrix ans rejected");
+
+  /* ── whole-bank schema guard ───────────────────────────────────────────
+     29 shipped items silently failed validateItem: 17 had cj:null, 6 had the
+     legacy cj:"take-action", and 6 hotspot items used mode:"rows" against a
+     validator that only accepted "row"/"cell". Nothing caught it because the
+     validator only ever ran on incoming drafts, never on the content bank —
+     so every one of those items was invisible to any cj filter and would have
+     been rejected the moment an editor opened it in the authoring console.   */
+  const invalid = NC.BANK.filter(q=>A.validateItem(q,NC).length>0)
+    .map(q=>`${q.id}:${A.validateItem(q,NC)[0]}`);
+  ok(invalid.length===0, `every bank item passes validateItem (${invalid.length} invalid${invalid.length?": "+invalid.slice(0,3).join(", "):""})`);
+  const badCj = NC.BANK.filter(q=>!NC.TAX.cjSteps.includes(q.cj)).map(q=>q.id);
+  ok(badCj.length===0, `every bank item uses a taxonomy cj step (${badCj.length} off-taxonomy${badCj.length?": "+badCj.slice(0,3).join(", "):""})`);
+
+  /* Paraphrase guard. duplicateClusters() is fingerprint-exact, so a reworded
+     copy of an existing item sails through — 12 wave-4 items reused topics the
+     bank already covered while the scan reported "0 duplicates". Same stem AND
+     same key under two ids is the repeat-the-user-sees case.               */
+  const il = createRequire(import.meta.url)(path.join(root,"itemlint.js"));
+  ok(il.duplicateClusters(NC.BANK).exactCount===0, "no same-content clusters in the bank");
+  const near = il.nearDuplicatePairs(NC.BANK);
+  ok(near.length===0, `no near-duplicate pairs (stem ≥0.45 + key ≥0.50)${near.length?": "+near.slice(0,3).map(p=>p.a+"~"+p.b).join(", "):""}`);
   // lifecycle
   const r0 = A.createDraft(NC,D,{...base,id:"ZZZ-902"},"n1");
   ok(r0.record && r0.record.status==="draft", "draft created");
