@@ -1,14 +1,15 @@
-/* RN Ready — case study v2 · long-term care (PN-scope).
-   Sixth unfolding case, authored for PN depth: an assisted-living resident's
-   subtle deterioration (delirium from urinary source + dehydration) is caught,
-   escalated to the supervising RN, managed within practical-nurse scope, and
-   prevented from recurring. fam:"PN" makes PN simulations prefer this case;
-   it remains fully usable by any exam.  */
+/* RN Ready — case study v2 · long-term care.
+   Sixth unfolding case: an assisted-living resident's subtle deterioration
+   (delirium from urinary source + dehydration) is caught, escalated, managed,
+   and prevented from recurring.
+
+   History: originally authored for PN depth and tagged fam:"PN". The product is
+   RN-only now, so the tag was dropped — the case is unchanged.  */
 NC.CASES = NC.CASES || [];
 NC.CASES.push(
 
 {id:"CASE-LTC-01", title:"The Quiet Resident — Mr. B., 84",
- setting:"Assisted living / long-term care", sys:"NEURO", cn:"MOC", d:2, b:0.25, fam:"PN",
+ setting:"Assisted living / long-term care", sys:"NEURO", cn:"MOC", d:2, b:0.25,
  summary:"84-year-old retired teacher, normally a chatty walker-of-the-halls, becomes quietly confused and starts falling; judgment unfolds from noticing the change to escalating within scope and preventing the next episode.",
  exhibits:{
   history:{name:"Care Team Note", type:"text", body:"84-year-old man, assisted living for 3 years after his wife's death. Mild baseline forgetfulness (“loses his glasses, not his way”), walks the halls daily, leads the morning crossword group. History: benign prostatic hyperplasia, hypertension, osteoarthritis. Medications: lisinopril 10 mg daily, tamsulosin 0.4 mg nightly, acetaminophen 650 mg as needed. Advance directive on file; daughter is emergency contact. Over the last two days, staff note he has skipped the crossword group, napped through lunch, and twice been found at the wrong apartment door after sundown."},

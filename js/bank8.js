@@ -38,7 +38,7 @@ NC.BANK.push(
   s:"Apply the rights of delegation: right task (routine, non-invasive), right person (AP), right circumstances (stable client), right direction, right supervision."},
  ref:"Delegation · chronic kidney disease"},
 
-{id:"MOC-043", t:"single", cn:"MOC", fam:"RN", sys:"RESP", topic:"Assignment quality", d:2, b:0.2, cj:"analyze", tags:["assignment","float","acuity"],
+{id:"MOC-043", t:"single", cn:"MOC", sys:"RESP", topic:"Assignment quality", d:2, b:0.2, cj:"analyze", tags:["assignment","float","acuity"],
  stem:"A float nurse from the medical-surgical unit is assigned to a pulmonary unit. Which client assignment is most appropriate for the float nurse?",
  opts:["A client receiving nebulizer treatments for stable asthma who ambulates independently",
   "A client on a high-flow nasal cannula being weaned by respiratory therapy",

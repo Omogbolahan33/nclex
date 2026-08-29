@@ -46,7 +46,6 @@ NC.EXAMS = {
   "nclex-rn-2026": {
     name:"NCLEX-RN 2026 (Full Simulation)",
     version:"2026 (Apr 1 2026 – Mar 31 2029)",
-    examFamily:"RN",
     minItems:85, maxItems:150, durationMinutes:300,
     caseStudies:3, pretestItems:15,
     allowBack:false, calculator:true,
@@ -57,7 +56,6 @@ NC.EXAMS = {
   "rn-preview-sim": {
     name:"Preview Simulation (short)",
     version:"NCLEX-style · shortened for the current item pool",
-    examFamily:"RN",
     minItems:26, maxItems:40, durationMinutes:45,
     caseStudies:1, pretestItems:2,
     allowBack:false, calculator:true,
@@ -65,42 +63,8 @@ NC.EXAMS = {
     cut:0.0,
     blueprint:null
   },
-  /* NCLEX-PN 2026 Test Plan (effective Apr 1 2026 – Mar 31 2029):
-     85–150 items, 5 h, 3 CJ case sets (18 items), ~15 pretest at minimum length.
-     PN Client Needs: Coordinated Care 18–24 · S&IP&C 10–16 · HP&M 6–12 · Psych 9–15 ·
-     BCC 7–13 · Pharm 10–16 · RRP 9–15 · Physio Adaptation 7–13. Midpoints sum to 100. */
-  "nclex-pn-2026": {
-    name:"NCLEX-PN 2026 (Full Simulation)",
-    version:"2026 PN Test Plan (Apr 1 2026 – Mar 31 2029)",
-    examFamily:"PN",
-    minItems:85, maxItems:150, durationMinutes:300,
-    caseStudies:3, pretestItems:15,
-    allowBack:false, calculator:true,
-    breaks:[{afterMin:120,label:"First optional break"},{afterMin:210,label:"Second optional break"}],
-    cut:0.0,
-    blueprint:{ MOC:21, SIC:13, HPM:9, PSY:12, BCC:10, PHA:13, RRP:12, PAA:10 },
-    cnNames:{ MOC:"Coordinated Care", SIC:"Safety & Infection Prevention and Control",
-              HPM:"Health Promotion & Maintenance", PSY:"Psychosocial Integrity",
-              BCC:"Basic Care & Comfort", PHA:"Pharmacological Therapies",
-              RRP:"Reduction of Risk Potential", PAA:"Physiological Adaptation" }
-  },
-  "pn-preview-sim": {
-    name:"PN Preview Simulation (short)",
-    version:"NCLEX-PN-style · shortened for the current item pool",
-    examFamily:"PN",
-    minItems:26, maxItems:40, durationMinutes:45,
-    caseStudies:1, pretestItems:2,
-    allowBack:false, calculator:true,
-    breaks:[], cut:0.0,
-    blueprint:{ MOC:21, SIC:13, HPM:9, PSY:12, BCC:10, PHA:13, RRP:12, PAA:10 },
-    cnNames:{ MOC:"Coordinated Care", SIC:"Safety & Infection Prevention and Control",
-              HPM:"Health Promotion & Maintenance", PSY:"Psychosocial Integrity",
-              BCC:"Basic Care & Comfort", PHA:"Pharmacological Therapies",
-              RRP:"Reduction of Risk Potential", PAA:"Physiological Adaptation" }
-  },
   "rn-timed-60": {
     name:"Timed Exam (60 items)",
-    examFamily:"RN",
     version:"Fixed-length adaptive selection",
     minItems:60, maxItems:60, durationMinutes:75,
     caseStudies:1, pretestItems:0,

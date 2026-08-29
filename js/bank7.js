@@ -66,7 +66,7 @@ NC.BANK.push(
   s:"First teaching and competency checks belong to the RN; reinforcement can be shared — signatures don't transfer responsibility."},
  ref:"Education · delegation boundaries"},
 
-{id:"MOC-040", t:"drag", cn:"MOC", fam:"RN", sys:"INF", topic:"Chain of command", d:1, b:-0.05, cj:"generate", tags:["escalation","safety","communication"],
+{id:"MOC-040", t:"drag", cn:"MOC", sys:"INF", topic:"Chain of command", d:1, b:-0.05, cj:"generate", tags:["escalation","safety","communication"],
  stem:"A new nurse is worried about a client's subtle deterioration but the assigned provider has not responded to two pages. Order the escalation steps from first to last. Assign one step per position.",
  drag:{ targets:["1 — First","2","3","4 — Last"],
    opts:[

@@ -779,12 +779,9 @@ function simPreflight(examId){
   const nameOf = id => (e.cnNames && e.cnNames[id]) || NC.cn(id).name;
   const bpRows = Object.entries(bp).sort((a,b)=>b[1]-a[1]).map(([id,v])=>`
     <div class="kv"><span>${esc(nameOf(id))}</span><b>${v}%</b></div>`).join("");
-  const isPN = e.examFamily==="PN";
   screen(`<div class="topbar"><button class="back" data-act="go" data-to="#/simulate" aria-label="Back">‹</button><h1>Pre-flight</h1></div>
    <div class="card"><h3>${esc(e.name)}</h3><p class="hint">${esc(e.version)}</p>
-     <p class="hint" style="margin:8px 0 0">${isPN
-       ? "PN simulation draws from the shared RN-focused item bank under the PN blueprint — an approximation until a PN-specific bank is authored."
-       : "Blueprint percentages below drive the adaptive selection."}</p></div>
+     <p class="hint" style="margin:8px 0 0">Blueprint percentages below drive the adaptive selection.</p></div>
    <div class="card"><h3>Blueprint</h3>${bpRows}</div>
    <div class="card"><h3>Acknowledge the exam rules</h3>
     ${rules.map((r,i)=>`<div class="checkrow"><input type="checkbox" id="pf${i}" data-act=""><label for="pf${i}">${esc(r)}</label></div>`).join("")}

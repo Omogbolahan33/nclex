@@ -5,14 +5,17 @@
    data collection and reporting, stable and predictable clients in long-term
    care, home care, and clinic settings. Weighting follows the 2026 PN blueprint
    gaps in the shared pool (CC/MOC +8 · PSY +5 · BCC +4 · SIC +3 · PHA +3 ·
-   HPM +2 · RRP +2 · PAA +3), each item tagged fam:"PN" so PN simulations
-   prefer them wherever a real choice exists. Two items join existing variant
-   groups (delegation-uap, hypoglycemia-15g).  */
+   HPM +2 · RRP +2 · PAA +3). Two items join existing variant groups
+   (delegation-uap, hypoglycemia-15g).
+
+   History: these items were originally tagged fam:"PN" when the bank served both
+   NCLEX-RN and NCLEX-PN. The product is RN-only now, so the tags were dropped —
+   the content itself is unchanged and remains fully usable.  */
 NC.BANK = NC.BANK || [];
 NC.BANK.push(
 
 /* ── Coordinated Care (PN 21%) ─────────────────────────────────────── */
-{id:"MOC-049", t:"single", cn:"MOC", sys:"NEURO", topic:"Change-of-condition reporting", d:1, b:0.0, cj:"recognize", fam:"PN", tags:["ltc","change-of-condition","escalation"],
+{id:"MOC-049", t:"single", cn:"MOC", sys:"NEURO", topic:"Change-of-condition reporting", d:1, b:0.0, cj:"recognize", tags:["ltc","change-of-condition","escalation"],
  stem:"The practical nurse is making morning rounds in a long-term care facility. Which resident change should the nurse report to the supervising RN before completing the rest of the pass?",
  opts:["An 84-year-old who was oriented yesterday now cannot state the month and keeps calling for a parent",
   "A resident asks for extra blankets because the room feels cold this morning",
@@ -27,7 +30,7 @@ NC.BANK.push(
   s:"Change-of-condition rule: new confusion, new falls, new incontinence, eating change, or behavior change = stop and report to the RN now."},
  ref:"Long-term care · change-of-condition reporting"},
 
-{id:"MOC-050", t:"single", cn:"MOC", sys:"MSK", topic:"Delegation in home care", d:1, b:-0.05, cj:"generate", fam:"PN", tags:["delegation","uap","home-care"], variantGroup:"delegation-uap",
+{id:"MOC-050", t:"single", cn:"MOC", sys:"MSK", topic:"Delegation in home care", d:1, b:-0.05, cj:"generate", tags:["delegation","uap","home-care"], variantGroup:"delegation-uap",
  stem:"During a home-care visit, the practical nurse is preparing to leave and the family asks which helper tasks the home health aide may do for their mother this week. Which task is within the aide's role?",
  opts:["Assisting with a shower and reminding the client to use her walker in the hallway",
   "Changing the dressing on the client's heel ulcer before the next nurse visit",
@@ -42,7 +45,7 @@ NC.BANK.push(
   s:"Aide scope = help with daily living and reminders. Anything sterile, anything medication, anything judgment = licensed nurse."},
  ref:"Home care · delegation to aides"},
 
-{id:"MOC-051", t:"single", cn:"MOC", sys:"CV", topic:"Assignment within scope", d:2, b:0.2, cj:"analyze", fam:"PN", tags:["assignment","scope","acuity"],
+{id:"MOC-051", t:"single", cn:"MOC", sys:"CV", topic:"Assignment within scope", d:2, b:0.2, cj:"analyze", tags:["assignment","scope","acuity"],
  stem:"The charge RN is making assignments on a skilled nursing unit. Which client is most appropriate for the practical nurse's assignment?",
  opts:["A client two days after hip replacement who is transferring with one assist and needs routine analgesia",
   "A client admitted an hour ago with uncontrolled atrial fibrillation and dropping blood pressure",
@@ -57,7 +60,7 @@ NC.BANK.push(
   s:"Assignment math for the practical nurse: stable + predictable + established plan. New, unstable, or first-dose goes to the RN."},
  ref:"Assignment · practical nurse scope"},
 
-{id:"MOC-052", t:"single", cn:"MOC", sys:"ENDO", topic:"Reinforcing RN teaching", d:1, b:0.05, cj:"evaluate", fam:"PN", tags:["teaching","reinforcement","scope"],
+{id:"MOC-052", t:"single", cn:"MOC", sys:"ENDO", topic:"Reinforcing RN teaching", d:1, b:0.05, cj:"evaluate", tags:["teaching","reinforcement","scope"],
  stem:"A client newly started on insulin asks the practical nurse in the clinic to explain how to draw up the doses for the first time. Which action is within the practical nurse's role?",
  opts:["Reinforce the RN's original teaching by observing a return demonstration and answering routine questions",
   "Provide the complete initial instruction independently since the client asked directly",
@@ -72,7 +75,7 @@ NC.BANK.push(
   s:"Teaching roles in one line: RN initiates and evaluates, practical nurse reinforces and reports gaps back."},
  ref:"Client education · role differentiation"},
 
-{id:"MOC-053", t:"single", cn:"MOC", sys:"GI", topic:"Documentation correction", d:1, b:0.0, cj:"act", fam:"PN", tags:["documentation","legal"],
+{id:"MOC-053", t:"single", cn:"MOC", sys:"GI", topic:"Documentation correction", d:1, b:0.0, cj:"act", tags:["documentation","legal"],
  stem:"While reviewing notes before handoff, the practical nurse realizes yesterday's entry listed the wrong colostomy output amount. Which documentation practice is correct?",
  opts:["Draw a single line through the error, write “error,” initial and date it, then record the correct figure",
   "Erase the wrong figure completely and write the correct one over it",
@@ -87,7 +90,7 @@ NC.BANK.push(
   s:"Chart correction recipe: one line, “error,” initial, date, correct entry. Never erase, never obliterate, never verbal-only."},
  ref:"Documentation · error correction"},
 
-{id:"MOC-054", t:"single", cn:"MOC", sys:"GI", topic:"Consent witness role", d:2, b:0.15, cj:"recognize", fam:"PN", tags:["consent","witness","scope"],
+{id:"MOC-054", t:"single", cn:"MOC", sys:"GI", topic:"Consent witness role", d:2, b:0.15, cj:"recognize", tags:["consent","witness","scope"],
  stem:"A client scheduled for a colonoscopy asks the practical nurse to explain the procedure's risks because the RN is busy. Which response keeps the practical nurse within scope?",
  opts:["“The RN or the provider will review the risks with you — I can stay while they do, and I have signed that I saw you sign.”",
   "“I can go over the main risks with you right now since you seem ready to sign.”",
@@ -102,7 +105,7 @@ NC.BANK.push(
   s:"Practical nurse consent role = witness and verify voluntariness. The explanation itself belongs to the provider/RN."},
  ref:"Informed consent · witnessing"},
 
-{id:"MOC-055", t:"drag", cn:"MOC", sys:"RESP", topic:"Home emergency escalation", d:2, b:0.25, cj:"prioritize", fam:"PN", tags:["home-care","emergency","prioritization"],
+{id:"MOC-055", t:"drag", cn:"MOC", sys:"RESP", topic:"Home emergency escalation", d:2, b:0.25, cj:"prioritize", tags:["home-care","emergency","prioritization"],
  stem:"During a home visit, the client suddenly becomes severely short of breath with audible wheezing and cannot finish a sentence. Order the practical nurse's actions from FIRST to LAST.",
  drag:{targets:["1 — First","2","3","4 — Last"],
   opts:[
@@ -120,7 +123,7 @@ NC.BANK.push(
   s:"Home emergency order: stay + position + 911 → assess → protocol treatment → notify and document."},
  ref:"Home care · emergency response"},
 
-{id:"MOC-056", t:"single", cn:"MOC", sys:"ENDO", topic:"Medication pass prioritization", d:1, b:0.05, cj:"prioritize", fam:"PN", tags:["time-management","medications","insulin"],
+{id:"MOC-056", t:"single", cn:"MOC", sys:"ENDO", topic:"Medication pass prioritization", d:1, b:0.05, cj:"prioritize", tags:["time-management","medications","insulin"],
  stem:"At 0730 the practical nurse is preparing medications for four home-bound clients visited in sequence. Which medication should be given at the earliest stop?",
  opts:["The 0730 pre-breakfast rapid-acting insulin for a client about to eat",
   "The 0800 once-daily multivitamin scheduled with breakfast",
@@ -136,7 +139,7 @@ NC.BANK.push(
  ref:"Medication administration · time-critical doses"},
 
 /* ── Safety & Infection Prevention and Control (PN 13%) ────────────── */
-{id:"SIC-037", t:"single", cn:"SIC", sys:"GI", topic:"Outbreak precautions", d:1, b:0.1, cj:"act", fam:"PN", tags:["norovirus","outbreak","ltc"],
+{id:"SIC-037", t:"single", cn:"SIC", sys:"GI", topic:"Outbreak precautions", d:1, b:0.1, cj:"act", tags:["norovirus","outbreak","ltc"],
  stem:"Norovirus is sweeping a long-term care unit. Which precaution practice should the practical nurse apply for affected residents?",
  opts:["Contact precautions with soap-and-water handwashing after caring for each resident with symptoms",
   "Contact precautions with alcohol-based rub, which is faster between rooms",
@@ -151,7 +154,7 @@ NC.BANK.push(
   s:"Norovirus mnemonic: soap beats sanitizer. Contact precautions, dedicated equipment, bleach-clean the environment."},
  ref:"Norovirus · long-term care outbreaks"},
 
-{id:"SIC-038", t:"single", cn:"SIC", sys:"RESP", topic:"Home oxygen safety", d:1, b:-0.1, cj:"generate", fam:"PN", tags:["oxygen-safety","home-care","teaching"],
+{id:"SIC-038", t:"single", cn:"SIC", sys:"RESP", topic:"Home oxygen safety", d:1, b:-0.1, cj:"generate", tags:["oxygen-safety","home-care","teaching"],
  stem:"The practical nurse is reinforcing home-oxygen safety with a client starting continuous oxygen by concentrator. Which instruction is essential?",
  opts:["Keep tubing at least 10 feet away from open flames, and post no-smoking signs at the entrances",
   "Use the oxygen only at night so the concentrator does not overheat the apartment",
@@ -166,7 +169,7 @@ NC.BANK.push(
   s:"Home oxygen trio: nothing burning within 10 feet, water-based moisture only, and the flow rate belongs to the prescriber."},
  ref:"Home oxygen therapy · safety teaching"},
 
-{id:"SIC-039", t:"multi", cn:"SIC", sys:"INTG", topic:"Standard precautions at home", d:1, b:0.0, cj:"generate", fam:"PN", tags:["standard-precautions","home-care","ppe"],
+{id:"SIC-039", t:"multi", cn:"SIC", sys:"INTG", topic:"Standard precautions at home", d:1, b:0.0, cj:"generate", tags:["standard-precautions","home-care","ppe"],
  stem:"The practical nurse is preparing to empty a client's colostomy pouch and change a soiled dressing during a home visit. Select every standard-precaution practice that applies.",
  opts:["Clean gloves for pouch emptying, changed before touching clean supplies",
   "Hand hygiene before and after every glove removal",
@@ -184,7 +187,7 @@ NC.BANK.push(
  ref:"Standard precautions · home visits"},
 
 /* ── Health Promotion & Maintenance (PN 9%) ────────────────────────── */
-{id:"HPM-027", t:"single", cn:"HPM", sys:"INF", topic:"Adult immunization reinforcement", d:1, b:-0.1, cj:"evaluate", fam:"PN", tags:["immunization","tdap","reinforcement"],
+{id:"HPM-027", t:"single", cn:"HPM", sys:"INF", topic:"Adult immunization reinforcement", d:1, b:-0.1, cj:"evaluate", tags:["immunization","tdap","reinforcement"],
  stem:"A 55-year-old clinic client cannot remember the last tetanus shot and reports stepping on a nail last week while gardening. Which guidance should the practical nurse reinforce after the provider's orders?",
  opts:["A tetanus-containing booster is given now if more than ten years have passed since the last dose",
   "No booster is needed because an adult tetanus series lasts for life",
@@ -199,7 +202,7 @@ NC.BANK.push(
   s:"Tetanus clock: booster every 10 years; a dirty wound plus an unknown clock reads zero."},
  ref:"Immunization · tetanus boosters"},
 
-{id:"HPM-028", t:"single", cn:"HPM", sys:"GI", topic:"Cancer screening reinforcement", d:1, b:0.0, cj:"generate", fam:"PN", tags:["screening","colorectal","clinic"],
+{id:"HPM-028", t:"single", cn:"HPM", sys:"GI", topic:"Cancer screening reinforcement", d:1, b:0.0, cj:"generate", tags:["screening","colorectal","clinic"],
  stem:"A 46-year-old with average colorectal cancer risk asks what screening is recommended after hearing a friend's diagnosis. Which reinforcement is accurate?",
  opts:["Screening begins at 45, with stool-based tests yearly or colonoscopy every ten years as options to discuss",
   "Screening starts only when symptoms such as bleeding or bowel changes appear",
@@ -215,7 +218,7 @@ NC.BANK.push(
  ref:"Cancer screening · colorectal start age"},
 
 /* ── Psychosocial Integrity (PN 12%) ───────────────────────────────── */
-{id:"PSY-027", t:"single", cn:"PSY", sys:"NEURO", topic:"Dementia communication", d:1, b:0.05, cj:"act", fam:"PN", tags:["dementia","validation","communication"],
+{id:"PSY-027", t:"single", cn:"PSY", sys:"NEURO", topic:"Dementia communication", d:1, b:0.05, cj:"act", tags:["dementia","validation","communication"],
  stem:"A resident with advanced dementia paces the hallway each evening saying, “I have to get home to cook dinner for the children.” Which response is most therapeutic?",
  opts:["“Your children are grown now. Let's look at these family photos together and get ready for bed.”",
   "“You tell me that every night — your children are nowhere nearby, remember?”",
@@ -230,7 +233,7 @@ NC.BANK.push(
   s:"Late-dementia communication: join the feeling, then steer. Correcting the facts is for early stages; comfort outranks accuracy at this stage."},
  ref:"Dementia care · validation and redirection"},
 
-{id:"PSY-028", t:"single", cn:"PSY", sys:"PSYCH", topic:"Family adjustment to placement", d:1, b:0.1, cj:"act", fam:"PN", tags:["ltc","family","guilt","communication"],
+{id:"PSY-028", t:"single", cn:"PSY", sys:"PSYCH", topic:"Family adjustment to placement", d:1, b:0.1, cj:"act", tags:["ltc","family","guilt","communication"],
  stem:"The daughter of a newly placed nursing-home resident says, “I promised Mom I'd never put her in a home. I feel like I failed her.” Which response by the nurse is most therapeutic?",
  opts:["“It sounds like this decision weighs heavily on you. Would you like to talk about what made placement necessary now?”",
   "“At least your mother is getting better care here than she would at home alone.”",
@@ -245,7 +248,7 @@ NC.BANK.push(
   s:"Family placement guilt: name it, invite it, normalize it. Defend the decision later — after the feeling has room."},
  ref:"Long-term care · family transition"},
 
-{id:"PSY-029", t:"matrix", cn:"PSY", sys:"NEURO", topic:"Delirium vs dementia vs depression", d:2, b:0.2, cj:"analyze", fam:"PN", tags:["delirium","dementia","differentiation"],
+{id:"PSY-029", t:"matrix", cn:"PSY", sys:"NEURO", topic:"Delirium vs dementia vs depression", d:2, b:0.2, cj:"analyze", tags:["delirium","dementia","differentiation"],
  stem:"A home-health client's daughter asks whether her mother's confusion is “the start of dementia.” For each feature, decide whether it points to DELIRIUM or to DEMENTIA as the more typical pattern.",
  matrix:{cols:["Delirium","Dementia"], rows:[
   "Begins abruptly over hours to a few days",
@@ -258,7 +261,7 @@ NC.BANK.push(
   s:"Three D's in a line: Delirium = days + attention + fluctuation; Dementia = years + memory; Depression = mood first, concentration complaints, intact orientation."},
  ref:"Cognitive impairment · delirium versus dementia"},
 
-{id:"PSY-030", t:"single", cn:"PSY", sys:"NEURO", topic:"Bath refusal in dementia", d:1, b:0.0, cj:"act", fam:"PN", tags:["dementia","adl","approach"],
+{id:"PSY-030", t:"single", cn:"PSY", sys:"NEURO", topic:"Bath refusal in dementia", d:1, b:0.0, cj:"act", tags:["dementia","adl","approach"],
  stem:"A resident with moderate dementia refuses the scheduled shower, backing away and saying “no” loudly. Which approach should the nurse use?",
  opts:["Defer the shower, offer a relaxing alternative activity now, and retry later in the shift",
   "Proceed quickly with the shower anyway since it is the scheduled care time",
@@ -273,7 +276,7 @@ NC.BANK.push(
   s:"Dementia refusals are timing problems, not authority problems: back off, regroup, retry — and keep cleanliness coming another way."},
  ref:"Dementia care · activities of daily living"},
 
-{id:"PSY-031", t:"single", cn:"PSY", sys:"GI", topic:"Religious dietary needs", d:1, b:0.05, cj:"act", fam:"PN", tags:["spirituality","cultural-care","advocacy"],
+{id:"PSY-031", t:"single", cn:"PSY", sys:"GI", topic:"Religious dietary needs", d:1, b:0.05, cj:"act", tags:["spirituality","cultural-care","advocacy"],
  stem:"A newly admitted resident keeps kosher, and the lunch tray delivered contains both meat and dairy items together. Which action by the nurse best meets the resident's needs?",
  opts:["Return the tray to dietary with a request for a kosher meal and inform the supervising RN of the mix-up",
   "Remove the dairy item from the tray and serve the rest to avoid delay",
@@ -289,7 +292,7 @@ NC.BANK.push(
  ref:"Cultural and spiritual care · dietary observance"},
 
 /* ── Basic Care & Comfort (PN 10%) ─────────────────────────────────── */
-{id:"BCC-027", t:"multi", cn:"BCC", sys:"GI", topic:"Dysphagia feeding", d:1, b:0.05, cj:"generate", fam:"PN", tags:["dysphagia","feeding","aspiration"],
+{id:"BCC-027", t:"multi", cn:"BCC", sys:"GI", topic:"Dysphagia feeding", d:1, b:0.05, cj:"generate", tags:["dysphagia","feeding","aspiration"],
  stem:"The practical nurse is feeding a resident with documented dysphagia after a stroke. Select every practice that reduces aspiration risk.",
  opts:["Sitting the resident fully upright at 90 degrees during and 30 minutes after the meal",
   "Offering small bites with the chin slightly tucked for each swallow",
@@ -306,7 +309,7 @@ NC.BANK.push(
   s:"Dysphagia feeding: 90 up, small and slow, chin tucked, cheeks checked — and quiet attention, not entertainment."},
  ref:"Dysphagia · safe feeding practices"},
 
-{id:"BCC-028", t:"single", cn:"BCC", sys:"GI", topic:"Ostomy diet advancement", d:1, b:-0.05, cj:"evaluate", fam:"PN", tags:["colostomy","diet","teaching"],
+{id:"BCC-028", t:"single", cn:"BCC", sys:"GI", topic:"Ostomy diet advancement", d:1, b:-0.05, cj:"evaluate", tags:["colostomy","diet","teaching"],
  stem:"A client is six weeks past a sigmoid colostomy and asks about returning to normal meals. Which advice is accurate?",
  opts:["Reintroduce foods one at a time and note any that cause gas, odor, or blockage symptoms",
   "Stay on a permanent soft, low-fiber diet to protect the stoma",
@@ -321,7 +324,7 @@ NC.BANK.push(
   s:"Ostomy diets normalize by experiment: one new food at a time, watch the bag, chew thoroughly."},
  ref:"Colostomy · dietary progression"},
 
-{id:"BCC-029", t:"single", cn:"BCC", sys:"MSK", topic:"Heat and cold therapy", d:1, b:0.0, cj:"generate", fam:"PN", tags:["thermal-therapy","comfort","safety"],
+{id:"BCC-029", t:"single", cn:"BCC", sys:"MSK", topic:"Heat and cold therapy", d:1, b:0.0, cj:"generate", tags:["thermal-therapy","comfort","safety"],
  stem:"The practical nurse is applying a warm compress to a home client's shoulder per the care plan. Which practice keeps the application safe?",
  opts:["Barrier cloth between skin and heat, treatment no longer than 20 minutes, and skin checks during use",
   "Direct pack-to-skin contact for the fastest deep-muscle warming effect",
@@ -336,7 +339,7 @@ NC.BANK.push(
   s:"Heat or cold: cloth between, twenty-minute clock, look at the skin. The extremes of contact and duration are how comfort therapy becomes injury."},
  ref:"Thermal therapy · safe application"},
 
-{id:"BCC-030", t:"single", cn:"BCC", sys:"PSYCH", topic:"Sleep promotion in LTC", d:1, b:0.05, cj:"generate", fam:"PN", tags:["sleep","ltc","nonpharmacologic"],
+{id:"BCC-030", t:"single", cn:"BCC", sys:"PSYCH", topic:"Sleep promotion in LTC", d:1, b:0.05, cj:"generate", tags:["sleep","ltc","nonpharmacologic"],
  stem:"A resident sleeps poorly at night and dozes through daytime activities. Which measure should the nurse try first to restore a normal sleep-wake cycle?",
  opts:["Increase daytime light exposure and structured activity, then cluster night care to protect a sleep block",
   "Request a standing sedative-hypnotic at bedtime from the provider",
@@ -352,7 +355,7 @@ NC.BANK.push(
  ref:"Sleep · long-term care promotion"},
 
 /* ── Pharmacotherapy (PN 13%) ──────────────────────────────────────── */
-{id:"PHA-053", t:"single", cn:"PHA", sys:"ENDO", topic:"Insulin storage", d:1, b:0.0, cj:"evaluate", fam:"PN", tags:["insulin","storage","home-care"],
+{id:"PHA-053", t:"single", cn:"PHA", sys:"ENDO", topic:"Insulin storage", d:1, b:0.0, cj:"evaluate", tags:["insulin","storage","home-care"],
  stem:"During a home visit, the practical nurse finds the client storing every insulin pen in the freezer “to keep it fresh.” Which teaching is correct?",
  opts:["The in-use pen stays at room temperature up to 28 days; unopened pens live in the refrigerator — the freezer ruins insulin",
   "Freezing is ideal as long as the insulin thaws fully before each injection",
@@ -367,7 +370,7 @@ NC.BANK.push(
   s:"Insulin storage split: open = room (≤28 days), sealed = fridge, frozen = trash."},
  ref:"Insulin therapy · storage rules"},
 
-{id:"PHA-054", t:"single", cn:"PHA", sys:"ENDO", topic:"OTC-herbal interaction reporting", d:2, b:0.15, cj:"analyze", fam:"PN", tags:["medication-reconciliation","herbals","reporting"],
+{id:"PHA-054", t:"single", cn:"PHA", sys:"ENDO", topic:"OTC-herbal interaction reporting", d:2, b:0.15, cj:"analyze", tags:["medication-reconciliation","herbals","reporting"],
  stem:"During a medication reconciliation at an assisted-living facility, a resident mentions taking St. John's wort daily “for mood” along with prescribed warfarin. Which action by the nurse is correct?",
  opts:["Report the combination to the supervising RN and pharmacist the same day for interaction review",
   "Reassure the resident that herbal products cannot interact with prescriptions",
@@ -382,7 +385,7 @@ NC.BANK.push(
   s:"Every herbal is a drug at reconciliation. St. John's wort + warfarin = enzyme induction = clots. Report, don't reassure."},
  ref:"Medication safety · herbal interactions"},
 
-{id:"PHA-055", t:"cloze", cn:"PHA", sys:"GI", topic:"PEG tube administration", d:2, b:0.2, cj:"generate", fam:"PN", tags:["peg-tube","administration","safety"],
+{id:"PHA-055", t:"cloze", cn:"PHA", sys:"GI", topic:"PEG tube administration", d:2, b:0.2, cj:"generate", tags:["peg-tube","administration","safety"],
  stem:"Complete the safe-administration sequence for medications through a client's PEG tube.",
  cloze:{lines:[
   {pre:"Before giving anything, the nurse verifies tube placement by ", post:" per facility protocol.",
@@ -400,7 +403,7 @@ NC.BANK.push(
  ref:"Enteral tubes · medication administration"},
 
 /* ── Reduction of Risk Potential (PN 12%) ──────────────────────────── */
-{id:"RRP-040", t:"single", cn:"RRP", sys:"ENDO", topic:"Diabetic foot screening", d:1, b:-0.05, cj:"recognize", fam:"PN", tags:["diabetes","foot-exam","data-collection"],
+{id:"RRP-040", t:"single", cn:"RRP", sys:"ENDO", topic:"Diabetic foot screening", d:1, b:-0.05, cj:"recognize", tags:["diabetes","foot-exam","data-collection"],
  stem:"The practical nurse performs the quarterly diabetic foot check at a senior clinic. Which finding should be reported for same-day provider review?",
  opts:["A callus with a pinpoint dark center over the ball of the foot and reduced monofilament sensation in two toes",
   "Long-standing flat, painless corns on both little toes that the client has had for years",
@@ -415,7 +418,7 @@ NC.BANK.push(
   s:"Diabetic foot triage: loss of protective sensation + a break or pressure mark = escalate today. Everything else monitors."},
  ref:"Diabetes · foot risk screening"},
 
-{id:"RRP-041", t:"single", cn:"RRP", sys:"INTG", topic:"Wound dehiscence at home", d:2, b:0.25, cj:"act", fam:"PN", tags:["wound","dehiscence","home-care","emergency"],
+{id:"RRP-041", t:"single", cn:"RRP", sys:"INTG", topic:"Wound dehiscence at home", d:2, b:0.25, cj:"act", tags:["wound","dehiscence","home-care","emergency"],
  stem:"During a home visit, the practical nurse finds a post-operative abdominal incision has opened along half its length with a small amount of serosanguineous drainage; no organs are visible. Which action is correct?",
  opts:["Cover the wound with a sterile moist dressing, keep the client still and NPO, and arrange emergency transport while notifying the supervising RN and surgeon",
   "Pack the wound edges tightly with dry gauze and apply an abdominal binder before leaving",
@@ -431,7 +434,7 @@ NC.BANK.push(
  ref:"Wound complications · dehiscence response"},
 
 /* ── Physiological Adaptation (PN 10%) ─────────────────────────────── */
-{id:"PAA-053", t:"single", cn:"PAA", sys:"RESP", topic:"COPD baseline monitoring", d:1, b:0.05, cj:"analyze", fam:"PN", tags:["copd","home-care","reporting-thresholds"],
+{id:"PAA-053", t:"single", cn:"PAA", sys:"RESP", topic:"COPD baseline monitoring", d:1, b:0.05, cj:"analyze", tags:["copd","home-care","reporting-thresholds"],
  stem:"A home client with severe COPD has a usual oxygen saturation of 88–90% on room air. Which reading should the practical nurse report promptly?",
  opts:["84% on room air with new confusion and a respiratory rate of 28/min",
   "89% on room air before the morning nebulizer, as usual",
@@ -446,7 +449,7 @@ NC.BANK.push(
   s:"COPD monitoring runs against the client's OWN baseline: a real drop plus new symptoms = escalate; the textbook 'normal' does not apply."},
  ref:"COPD · home monitoring thresholds"},
 
-{id:"PAA-054", t:"single", cn:"PAA", sys:"ENDO", topic:"Hypoglycemia home protocol", d:1, b:-0.1, cj:"act", fam:"PN", tags:["hypoglycemia","15-15-rule","home-care"], variantGroup:"hypoglycemia-15g",
+{id:"PAA-054", t:"single", cn:"PAA", sys:"ENDO", topic:"Hypoglycemia home protocol", d:1, b:-0.1, cj:"act", tags:["hypoglycemia","15-15-rule","home-care"], variantGroup:"hypoglycemia-15g",
  stem:"A home client on insulin checks a glucose of 52 mg/dL during the afternoon visit. The client is alert but shaky and sweaty. Which action follows the standard home protocol?",
  opts:["Give 15 grams of fast-acting carbohydrate now and recheck the glucose in 15 minutes",
   "Give the next scheduled insulin dose early to stabilize the swings",
@@ -461,7 +464,7 @@ NC.BANK.push(
   s:"Low and alert = 15 and 15: fifteen grams of sugar, fifteen minutes, recheck, repeat, then a real snack."},
  ref:"Hypoglycemia · rule of 15 at home"},
 
-{id:"PAA-055", t:"single", cn:"PAA", sys:"MSK", topic:"Assistive device fitting", d:1, b:0.0, cj:"evaluate", fam:"PN", tags:["walker","fitting","mobility"],
+{id:"PAA-055", t:"single", cn:"PAA", sys:"MSK", topic:"Assistive device fitting", d:1, b:0.0, cj:"evaluate", tags:["walker","fitting","mobility"],
  stem:"The practical nurse checks a client's new rolling walker before a first home ambulation attempt. Which observation indicates a correct fit?",
  opts:["The handgrips sit level with the crease of the client's wrists when standing upright, elbows bending about 20–30 degrees",
   "The handgrips reach the client's mid-forearm so the arms fully straighten for pushing",

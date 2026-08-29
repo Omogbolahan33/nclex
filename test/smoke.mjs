@@ -234,12 +234,14 @@ console.log("— simulation: case selection covers the whole case pool —");
   // round-robin bug that stranded the 4th case when caseStudies < CASES.length)
   const picked = new Set();
   for (let t=0; t<60; t++){
-    const sx = NC.newSim(t%2 ? "rn-preview-sim" : "pn-preview-sim");
+    // alternate two RN configs: the full sim takes 3 cases, the preview takes 1,
+    // so together they must still reach every case in the pool
+    const sx = NC.newSim(t%2 ? "rn-preview-sim" : "nclex-rn-2026");
     ok(sx.caseIds && sx.caseIds.length===sx.cfg.caseStudies && new Set(sx.caseIds).size===sx.caseIds.length,
        `sim selects ${sx.cfg.caseStudies} distinct cases (${sx.caseIds})`);
     sx.caseIds.forEach(c=>picked.add(c));
   }
-  ok(NC.CASES.every(c=>picked.has(c.id)), "all "+NC.CASES.length+" cases reachable across RN+PN sims (picked "+[...picked].join(", ")+")");
+  ok(NC.CASES.every(c=>picked.has(c.id)), "all "+NC.CASES.length+" cases reachable across RN sims (picked "+[...picked].join(", ")+")");
   // walk one sim to its first case slot and confirm the served case is from that sim's selection
   const sw = NC.newSim("rn-preview-sim");
   let servedCase=null, guard=0;
@@ -336,92 +338,6 @@ console.log("— sims survive JSON persistence (pretest slots) —");
   }
   ok(pretests === walk.cfg.pretestItems, `served ${pretests}/${walk.cfg.pretestItems} pretest items`);
   ok(walk.administered.filter(x=>x.pretest).every(x=>x.scored===false), "pretest items are never scored");
-}
-
-console.log("— PN depth: family affinity + PN blueprint tracking —");
-{
-  const pn = NC.BANK.filter(q=>q.fam==="PN"), rn = NC.BANK.filter(q=>q.fam==="RN");
-  ok(pn.length>=30, `PN-scope items authored (${pn.length})`);
-  ok(rn.length>=2, `RN-scope items flagged (${rn.length})`);
-  // case selection honors family: PN sims prefer the PN case, RN sims never need it
-  const pnSim = NC.newSim("nclex-pn-2026");
-  ok(pnSim.caseIds.includes("CASE-LTC-01"), `PN sim prefers PN case (${pnSim.caseIds})`);
-  for (let t=0;t<10;t++){ const rs = NC.newSim("nclex-rn-2026");
-    ok(!rs.caseIds.includes("CASE-LTC-01") || NC.CASES.length-1 < rs.cfg.caseStudies,
-       `RN sim fills from shared cases first (got ${rs.caseIds})`); }
-  // walk PN sims all-correct to their stop; verify blueprint tracking + affinity.
-  // PN-item counts vary with the randomesque selector, so the per-sim floor is low
-  // and the real assertion is cumulative preference + strict RN exclusion.
-  let pnTot=0, rnTot=0, checks=0;
-  for (let s=0; s<2; s++){
-    const sim = NC.newSim("nclex-pn-2026"); let g=0;
-    while (g++<300 && sim.status==="open"){
-      const nxt = NC.simNext(sim);
-      if (nxt.kind==="done") break;
-      if (nxt.kind==="case"){ for (const it of nxt.case.items) NC.simCaseItemAnswered(sim, nxt.case, it.step, correctAnsFor(it), 25000); }
-      else { const q=nxt.item; if (q.fam==="PN") pnTot++; if (q.fam==="RN") rnTot++;
-        NC.simAnswer(sim, q, correctAnsFor(q), 15000); }
-    }
-    ok(sim.status==="done", "PN sim completed");
-    if (s===0){
-      const c = sim.counts, tot = Object.values(c).reduce((a,b)=>a+b,0);
-      const top = Math.max(...Object.values(c));
-      // Coordinated Care carries the heaviest PN weight (21%), so it should land
-      // at or within randomesque noise (±1 item) of the lead — NOT a strict
-      // argmax, which flipped on PAA 17 vs MOC 16 and made this suite flaky.
-      ok(c.MOC/Math.max(1,tot)>=0.15 && c.MOC>=top-1,
-         `PN blueprint: Coordinated Care leads (${c.MOC}/${tot} = ${(100*c.MOC/tot).toFixed(1)}%, top=${top})`);
-      ok(c.PSY>=6, `PN blueprint: psychosocial represented (${c.PSY})`);
-    }
-  }
-  // Affinity is an EXCLUSION contract, not a boost. js/engine.js keeps untagged
-  // items eligible for every family (`!q.fam || q.fam===sim.cfg.examFamily`) and
-  // only drops items tagged for a DIFFERENT family. A by-share floor is therefore
-  // the wrong model: authoring shared (untagged) items legitimately lowers the PN
-  // share with no affinity regression. That is exactly what happened twice — the
-  // original `pnTot>=8` failed 6/8 runs, and its 35%-of-by-share replacement then
-  // failed on the next wave (pnTot 4 vs floor 5) while affinity was still correct.
-  // So assert the invariant the selector actually guarantees, both empirically
-  // over the items really served and deterministically over the eligibility pool.
-  ok(rnTot===0, `PN sims never served another family's items (${rnTot})`);
-  ok(pnTot >= 2, `PN sims served PN-scope content (${pnTot})`);
-  // Deterministic form, independent of selector randomness and bank composition:
-  const pnPool = NC.BANK.filter(q => !q.fam || q.fam === "PN");
-  ok(pnPool.every(q => q.fam !== "RN"),
-     "PN eligibility pool excludes every RN-tagged item");
-  const pnTagged = NC.BANK.filter(q => q.fam === "PN").length;
-  ok(pnPool.filter(q => q.fam === "PN").length === pnTagged,
-     `PN eligibility pool keeps every PN-tagged item (${pnTagged})`);
-  ok(pnPool.length < NC.BANK.length,
-     "PN affinity narrows the pool rather than matching everything");
-}
-
-console.log("— NCLEX-PN 2026 exam configuration (v3d) —");
-{
-  const pn = NC.EXAMS["nclex-pn-2026"];
-  ok(!!pn, "PN exam exists");
-  ok(pn.minItems===85 && pn.maxItems===150 && pn.durationMinutes===300, "PN logistics match the 2026 PN Test Plan (85–150 items, 5 h)");
-  ok(pn.caseStudies===3 && pn.pretestItems===15, "PN: 3 case studies, 15 pretest");
-  const sum = Object.values(pn.blueprint).reduce((a,b)=>a+b,0);
-  ok(sum===100, `PN blueprint midpoints sum to 100 (got ${sum})`);
-  ok(pn.blueprint.MOC===21 && pn.blueprint.SIC===13 && pn.blueprint.PHA===13, "PN weights: Coordinated Care 21 · S&IP&C 13 · Pharm 13");
-  ok(pn.cnNames.MOC==="Coordinated Care", "PN client-need naming (Coordinated Care, not Management of Care)");
-  ok(NC.EXAMS["pn-preview-sim"].examFamily==="PN", "PN preview sim present");
-  // per-exam blueprint drives selection: run the short PN preview to completion
-  const st0 = NC.load(); const seenBak = JSON.stringify(st0.seen); st0.seen = {};
-  const sim = NC.newSim("pn-preview-sim");
-  let guard=0; const cns=[];
-  while(true){ const nxt = NC.simNext(sim); if(nxt.kind==="done") break; if(guard++>100) break;
-    if(nxt.kind==="item"){ cns.push(nxt.item.cn); NC.simAnswer(sim, nxt.item, wrongAnsFor(nxt.item), 60000); }
-    else for(const it of nxt.case.items) NC.simCaseItemAnswered(sim, nxt.case, it.step, wrongAnsFor(it), 60000); }
-  const scored = sim.administered.filter(x=>x.scored).length;
-  ok(scored>=26 && scored<=40, `PN preview finished (${scored} scored)`);
-  const uniq = new Set(cns);
-  ok(uniq.size>=5, `PN preview draws ≥5 client-need areas (${uniq.size})`);
-  const tally = {}; cns.forEach(c=>{ if(!sim.administered.find(a=>a.cn===undefined)) tally[c]=(tally[c]||0)+1; });
-  const monoculture = Object.values(tally).some(n=>n>cns.length*0.4);
-  ok(!monoculture, "no client need exceeds 40% of the PN preview");
-  st0.seen = JSON.parse(seenBak); NC.save();
 }
 
 console.log("— spaced repetition scheduling —");

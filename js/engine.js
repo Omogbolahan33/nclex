@@ -602,13 +602,7 @@ NC.newSim = function(examId, opts){
   const cfg = NC.EXAMS[examId];
   const st = S();
   const seenPool = NC.allItems();
-  // family affinity for case selection, three tiers: family-specific cases first,
-  // shared (untagged) cases next, off-family cases only fill any remainder
-  const specOf = c => c.fam && cfg.examFamily && c.fam === cfg.examFamily;
-  const sharedCase = c => !c.fam || !cfg.examFamily;
-  const cases = shuffle(NC.CASES.filter(specOf)).concat(shuffle(NC.CASES.filter(sharedCase)))
-                 .concat(shuffle(NC.CASES.filter(c=>!specOf(c) && !sharedCase(c))))
-                 .slice(0, cfg.caseStudies);
+  const cases = shuffle(NC.CASES).slice(0, cfg.caseStudies);
   // plan case insertion points (by answered-item count)
   const span = Math.floor(cfg.maxItems*0.6);
   const caseSlots = cases.map((_,i)=> Math.max(6, Math.round(span*(i+1)/(cfg.caseStudies+1))));
@@ -698,12 +692,6 @@ NC.simNext = function(sim, opts){
   });
   let cands = best==null ? cands0 : cands0.filter(q=>q.cn===best);
   if (!cands.length) cands = cands0;
-  // family affinity: exams declaring an examFamily prefer items authored for that
-  // family whenever a genuine choice exists (untagged items are shared: they match all)
-  if (sim.cfg.examFamily){
-    const famCands = cands.filter(q=>!q.fam || q.fam===sim.cfg.examFamily);
-    if (famCands.length>=2) cands = famCands;
-  }
   if (!cands.length) return NC.simFinish(sim, "pool");
   // randomesque with exposure control: top-5 by |b - theta|, least-exposed first
   cands = cands.map(q=>({q, d:Math.abs(NC.diffB(q)-sim.theta), ex:seenCount(q.id)}))

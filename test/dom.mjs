@@ -135,13 +135,15 @@ ok(/Explanation|Why this is correct/.test(txt()), "item explanation from results
 console.log("— simulation pre-flight & run —");
 await nav("#/simulate"); ok(/Preview Simulation/.test(txt()), "simulate hub");
 {
-  ok(/NCLEX-PN 2026/.test(txt()), "PN full simulation listed");
-  ok(/PN Preview/.test(txt()), "PN preview listed");
-  window.location.hash="#/sim/preflight/nclex-pn-2026";
+  // The product is NCLEX-RN only. No PN exam may be listed, and the pre-flight
+  // must show the RN blueprint under RN client-need names.
+  ok(/NCLEX-RN 2026/.test(txt()), "RN full simulation listed");
+  ok(!/NCLEX-PN|PN Preview/.test(txt()), "no PN exam listed anywhere in the hub");
+  window.location.hash="#/sim/preflight/nclex-rn-2026";
   window.dispatchEvent(new window.HashChangeEvent("hashchange")); await after();
-  ok(/Coordinated Care/.test(txt()), "PN pre-flight shows PN client-need names");
-  ok(/21%/.test(txt()), "PN pre-flight shows Coordinated Care 21%");
-  ok(/shared RN-focused item bank/.test(txt()), "PN approximation disclosed in pre-flight");
+  ok(/Management of Care/.test(txt()), "RN pre-flight shows RN client-need names");
+  ok(/18%/.test(txt()), "RN pre-flight shows Management of Care 18%");
+  ok(!/shared RN-focused item bank/.test(txt()), "no PN approximation notice remains");
   await nav("#/simulate");
 }
 await click('[data-to="#/sim/preflight/rn-preview-sim"]');
