@@ -77,9 +77,16 @@ console.log("— freshness honesty (no silent recycling) —");
     .find(b=>/Pharmacological/.test(b.textContent));
   seg.dispatchEvent(new window.Event("click",{bubbles:true})); await after();
   const line = window.document.getElementById("cf-match").textContent;
-  ok(/\b2 new\b/.test(line) && /50 already answered/.test(line),
+  // Derive the expected counts from the fixture instead of freezing "50":
+  // everything in the PHA pool except the two named items was marked seen, so
+  // the answered count is pool length minus two. Hard-coding it broke the
+  // moment a new PHA item was authored.
+  const answered = pha.length - keepFresh.length;
+  ok(new RegExp("\\b"+keepFresh.length+" new\\b").test(line)
+     && new RegExp(answered+" already answered").test(line),
      `filter line reports new vs answered: "${line.trim()}"`);
-  ok(/\(52 match\)|\(\d+ match\)/.test(line) && new RegExp(keepFresh.length+" new").test(line),
+  ok(new RegExp("\\("+pha.length+" match\\)").test(line)
+     && new RegExp(keepFresh.length+" new").test(line),
      "the rendered count matches freshCount");
   // starting that session announces the split instead of hiding it
   let toasted = "";
