@@ -503,5 +503,49 @@ console.log("— sign-in merges exposure history even when local has more respon
   st.seen = JSON.parse(bak.seen); st.responses = JSON.parse(bak.responses); window.NC.save();
 }
 
+
+console.log("— remote sim recovers from a 404 instead of looping forever —");
+{
+  /* Regression: the server answers 404 "unknown sim" after a restart, because
+     data/store.json is gitignored and a fresh workspace boots from a blank
+     store while the browser still holds the old simId. serveSimRemote used to
+     treat every thrown error as transient and retry the dead id forever behind
+     a "Connection problem" toast, which stranded the candidate mid-exam. */
+  const st = window.NC.load();
+  const examId = Object.keys(window.NC.EXAMS)[0];
+  const cfg = window.NC.EXAMS[examId];
+  st.sims.push({ id:"STALE-SIM-404", examId, cfg, remote:true, status:"open",
+    startedTs:Date.now(), endsAt:Date.now()+60000, remainingMs:60000,
+    administered:[], counts:{}, theta:0, answeredCount:0, served:0, remoteAnswered:3 });
+  window.NC.save();
+
+  let startCalls=0, nextIds=[];
+  const bak = { remote:window.NC.api.remote, start:window.NC.api.simStart, next:window.NC.api.simNext };
+  window.NC.api.remote = true;
+  window.NC.api.simStart = async () => { startCalls++; return { simId:"FRESH-SIM-200", examId }; };
+  window.NC.api.simNext = async (id) => {
+    nextIds.push(id);
+    if (id === "STALE-SIM-404"){ const e=new Error("api /api/sim/next 404"); e.status=404; e.body={error:"unknown sim"}; throw e; }
+    return { kind:"item", n:1, pretest:false, item: window.NC.item(window.NC.BANK[0].id) };
+  };
+
+  await nav("#/sim/run/STALE-SIM-404");
+  await after(80);
+
+  ok(startCalls === 1, `a 404 minted exactly one replacement sim (got ${startCalls})`);
+  ok(nextIds.includes("STALE-SIM-404"), "the stale id was attempted before recovery");
+  const rec = window.NC.load().sims.find(x=>x.id==="FRESH-SIM-200");
+  ok(!!rec, "the local record now carries the fresh simId");
+  ok(!window.NC.load().sims.some(x=>x.id==="STALE-SIM-404"), "the dead simId was removed from the store");
+  ok(!!rec && rec.remoteAnswered === 0, "the stale answer tally was reset (server knows nothing about it)");
+  // toasts append to document.body, not #app, so txt() would never see them
+  ok(!/Connection problem/.test(window.document.body.textContent), "a 404 does not show the transient 'Connection problem' toast");
+
+  window.NC.api.remote = bak.remote; window.NC.api.simStart = bak.start; window.NC.api.simNext = bak.next;
+  const i = window.NC.load().sims.findIndex(x=>x.id==="FRESH-SIM-200");
+  if (i>=0) window.NC.load().sims.splice(i,1);
+  window.NC.save();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

@@ -829,10 +829,47 @@ function simRun(simId){
   serveSim();
 }
 /* ---- remote (server-authoritative CAT) path ---- */
+/* The server lost this sim (restart / wiped store), so the old id can never
+   resolve again. Mint a fresh one, carry the local record over, and re-route.
+   Counters reset because the server-side exam is starting from scratch — the
+   client must not keep a tally the server knows nothing about. */
+async function recoverRemoteSim(sim){
+  const oldId = sim.id;
+  try{
+    const r = await NC.api.simStart(sim.examId);
+    const mins = (sim.cfg && sim.cfg.durationMinutes) || NC.EXAMS[sim.examId].durationMinutes;
+    sim.id = r.simId;
+    sim.startedTs = Date.now();
+    sim.endsAt = Date.now() + mins*60000;
+    sim.remainingMs = mins*60000;
+    sim.administered = []; sim.counts = {}; sim.theta = 0;
+    sim.answeredCount = 0; sim.served = 0; sim.remoteAnswered = 0;
+    sim.currentQid = null; sim.currentCase = null; sim.caseIdx = 0;
+    NC.save();
+    NC.logEvent("sim_recovered",{exam:sim.examId, oldId, newId:sim.id});
+    NC.ui.toast("Your exam session had expired — starting a fresh one…");
+    return go("#/sim/run/" + sim.id);
+  }catch(_){
+    NC.ui.toast("Could not reach the exam server — retrying…");
+    setTimeout(()=>{ if(NC.route && location.hash.includes(oldId)) recoverRemoteSim(sim); },3000);
+  }
+}
 async function serveSimRemote(sim){
   let nxt;
   try{ nxt = await NC.api.simNext(sim.id); }
-  catch(e){ NC.ui.toast("Connection problem — retrying…"); setTimeout(()=>{ if(NC.route && location.hash.includes(sim.id)) serveSimRemote(sim); },1500); return; }
+  catch(e){
+    /* A 404 here is permanent, not transient: the server answers "unknown sim"
+       when NC.getSim finds no record, which happens after a restart because
+       data/store.json is gitignored — a redeploy or a fresh workspace starts
+       from a blank store while the browser still holds the old simId. Retrying
+       the same id loops forever behind a "Connection problem" toast, so mint a
+       new sim instead. Anything without a status (offline, DNS) or 5xx really
+       is transient and is still retried. */
+    if (e && e.status === 404) return recoverRemoteSim(sim);
+    NC.ui.toast("Connection problem — retrying…");
+    setTimeout(()=>{ if(NC.route && location.hash.includes(sim.id)) serveSimRemote(sim); },1500);
+    return;
+  }
   if (nxt.kind==="done") return finishRemoteSim(sim, nxt);
   if (nxt.kind==="case"){
     if (!nxt.case || !Array.isArray(nxt.case.items) || !nxt.case.items.length) {
