@@ -131,6 +131,25 @@ console.log("— authoring: authored items are live immediately —");
   const badCj = NC.BANK.filter(q=>!NC.TAX.cjSteps.includes(q.cj)).map(q=>q.id);
   ok(badCj.length===0, `every bank item uses a taxonomy cj step (${badCj.length} off-taxonomy${badCj.length?": "+badCj.slice(0,3).join(", "):""})`);
 
+  /* id-prefix / client-need consistency. Two wave-30 items shipped with PAA
+     ids and cn:"PHA". Nothing caught it: validateItem checks the id shape and
+     the cn value independently but never compares them, and itemlint skips
+     both — so the whole suite passed while the coverage report, which groups
+     by q.cn, silently attributed the items to the wrong blueprint area. The
+     prefix is what an author reads when choosing the next free id, so a
+     mismatch also corrupts id allocation. Only NC.BANK is checked: case
+     sub-items legitimately carry a body-system id (CASE-CV-01-act) with a
+     per-step cn, so including them would fail on 36 correct items.          */
+  const cnIds = NC.TAX.clientNeeds.map(c=>c.id);
+  const badPfx = NC.BANK
+    // Only real client-need prefixes. The ZZZ-* items this file creates via
+    // createDraft land in NC.BANK too, and their prefix is deliberately not a
+    // client need, so an unscoped check fails on its own fixtures.
+    .filter(q=>cnIds.includes(String(q.id).split("-")[0]))
+    .filter(q=>String(q.id).split("-")[0]!==q.cn)
+    .map(q=>`${q.id}(cn=${q.cn})`);
+  ok(badPfx.length===0, `every bank item's id prefix matches its cn (${badPfx.length} mismatched${badPfx.length?": "+badPfx.slice(0,3).join(", "):""})`);
+
   /* Paraphrase guard. duplicateClusters() is fingerprint-exact, so a reworded
      copy of an existing item sails through — 12 wave-4 items reused topics the
      bank already covered while the scan reported "0 duplicates". Same stem AND
