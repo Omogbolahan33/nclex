@@ -138,7 +138,7 @@ console.log("— authoring: authored items are live immediately —");
      by q.cn, silently attributed the items to the wrong blueprint area. The
      prefix is what an author reads when choosing the next free id, so a
      mismatch also corrupts id allocation. Only NC.BANK is checked: case
-     sub-items legitimately carry a body-system id (CASE-CV-01-act) with a
+     sub-items legitimately carry a body-system id (CASE-MI-01-act) with a
      per-step cn, so including them would fail on 36 correct items.          */
   const cnIds = NC.TAX.clientNeeds.map(c=>c.id);
   const badPfx = NC.BANK
@@ -248,7 +248,11 @@ console.log("— simulation: case selection covers the whole case pool —");
   // and across sims EVERY case in the pool must be reachable (regression for the
   // round-robin bug that stranded the 4th case when caseStudies < CASES.length)
   const picked = new Set();
-  for (let t=0; t<60; t++){
+  // 60 trials left ~0.16% miss probability per case (~3% per run) because selection
+  // is a uniform shuffle; that made this a flaky test rather than a regression guard.
+  // 300 trials push the false-failure probability to ~1e-14 while a genuinely
+  // stranded case still can never be picked, so the guard keeps its meaning.
+  for (let t=0; t<300; t++){
     // alternate two RN configs: the full sim takes 3 cases, the preview takes 1,
     // so together they must still reach every case in the pool
     const sx = NC.newSim(t%2 ? "rn-preview-sim" : "nclex-rn-2026");

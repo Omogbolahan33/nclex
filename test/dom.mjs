@@ -407,13 +407,13 @@ console.log("— premature simulation close: prompt to pick up exactly where sto
     startedTs: Date.now() - 300000,
     endsAt: Date.now() + 15000000,
     remainingMs: 15000000,
-    currentCase: "CASE-RESP-01",
+    currentCase: "CASE-SEPSIS-01",
     caseIdx: 2, // stopped at step 3
     caseSlots: [6, 40, 75],
     casesDone: 0,
     administered: [
-      { qid: "CASE-RESP-01-recognize", b: 0, score: 1, answered: true, done: true, scored: true },
-      { qid: "CASE-RESP-01-analyze", b: 0, score: 1, answered: true, done: true, scored: true }
+      { qid: "CASE-SEPSIS-01-recognize", b: 0, score: 1, answered: true, done: true, scored: true },
+      { qid: "CASE-SEPSIS-01-analyze", b: 0, score: 1, answered: true, done: true, scored: true }
     ],
     counts: {},
     theta: 0.2,
