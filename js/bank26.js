@@ -143,27 +143,25 @@
  rat:{c:"Parvovirus B19 suppresses red cell production. Infection in pregnancy, particularly in the first half, can lead to fetal anemia, hydrops fetalis, and loss, so prompt serologic assessment and fetal monitoring are indicated.",
   s:"Mild maternal illness does not mean low fetal risk. Withdrawing from work for the remainder of the pregnancy is unnecessary once the exposure is assessed, and antibiotics do not act on this virus."} },
 
-{id:"SIC-086", t:"single", cn:"SIC", sys:"INTG", topic:"Precautions for disseminated zoster", d:2, b:0.45, cj:"analyze", tags:["herpes zoster","transmission-based precautions","immunocompromise"],
- stem:"An immunocompromised client develops vesicular lesions scattered across several dermatomes on both sides of the body. What precautions should the nurse implement?",
- opts:["Airborne and contact precautions in a negative-pressure room, because disseminated zoster spreads like varicella until the lesions crust",
-  "Standard precautions with the lesions covered, since shingles is only locally contagious",
-  "Droplet precautions alone, since the virus travels only short distances in droplets",
-  "Contact precautions alone, since the lesions are the sole source of virus"],
+{id:"SIC-086", t:"single", cn:"SIC", sys:"INTG", topic:"Transmission precautions for suspected mpox", d:2, b:0.45, cj:"analyze", tags:["mpox","transmission-based precautions","lesion care"],
+ stem:"A client is admitted with a vesiculopustular rash after close household contact with a person who had a similar rash. Suspected mpox is being investigated. What precautions should the nurse implement?",
+ opts:["Contact and droplet precautions with eye protection, and the lesions kept covered beneath a gown and sleeves",
+  "Standard precautions alone, since the rash is confined to the skin",
+  "Airborne precautions only, since the virus travels on droplet nuclei",
+  "Contact precautions only, since the lesions are the sole source of virus"],
  ans:0,
- rat:{c:"Localized zoster in an immunocompetent client needs only lesion covering with standard precautions. Disseminated disease, or localized disease in an immunocompromised client, behaves like varicella and requires airborne plus contact precautions until every lesion has crusted.",
-  s:"Covering lesions suffices only for localized disease in an immunocompetent host. Disseminated zoster can become airborne, and contact precautions alone miss aerosolized virus shed from the lesions."} },
+ rat:{c:"Mpox spreads by direct contact with lesions, body fluids, and contaminated materials, and through respiratory droplets during prolonged close contact. Contact plus droplet precautions with eye protection are used, and covering lesions reduces environmental shedding. Dedicated equipment limits fomite spread.",
+  s:"Standard precautions ignore documented contact and droplet transmission. Airborne precautions alone are not the routine basis for this virus, and contact alone misses the respiratory route during close contact."} },
 
-{id:"SIC-087", t:"single", cn:"SIC", sys:"INTG", topic:"Managing a scabies infestation in a facility", d:2, b:0.45, cj:"generate", tags:["scabies","infestation","environmental control"],
- stem:"A client in a long-term care facility is diagnosed with scabies. What should the nurse include in the plan?",
- opts:["Treat the client and all close contacts at the same time, and bag clothing and linens used in the previous three days for hot washing or sealing",
-  "Treat only the client, since contacts are infectious only after they develop itching",
-  "Apply treatment from the neck down only, since scabies never involves the head in adults",
-  "Discard all bedding, since the mites survive indefinitely away from skin"],
+{id:"SIC-087", t:"single", cn:"SIC", sys:"INTG", topic:"Preoperative decolonization of a MRSA carrier", d:3, b:0.55, cj:"generate", tags:["MRSA","decolonization","surgical site infection"],
+ stem:"A client scheduled for elective total joint replacement is found on screening to carry methicillin-resistant Staphylococcus aureus in the nares. What should the nurse anticipate?",
+ opts:["A decolonization protocol with intranasal mupirocin and chlorhexidine body washing before surgery, because carriage raises the risk of surgical site infection",
+  "Proceeding without changes, since colonization without symptoms is not clinically relevant",
+  "Postponing the operation indefinitely, because a carrier cannot safely undergo joint replacement",
+  "Starting systemic vancomycin for two weeks to eliminate the organism before surgery"],
  ans:0,
- rat:{c:"Scabies spreads through prolonged skin contact, and infested contacts can transmit before symptoms appear, so simultaneous treatment prevents reinfestation. Topical treatment covers the whole body, and recently used items are laundered hot or sealed for several days.",
-  s:"Contacts are contagious before itching begins, so treating only the symptomatic client guarantees reinfestation. Adult infestation can involve the scalp, and mites survive off the host only a few days, so discarding bedding is unnecessary."} },
-
-/* ---------------- Reduction of Risk Potential (3) ---------------- */
+ rat:{c:"Nasal MRSA carriage is a major modifiable risk for surgical site infection after prosthetic joint surgery. Preoperative decolonization with intranasal mupirocin plus chlorhexidine bathing reduces that risk, which is why screening and decolonization protocols exist.",
+  s:"Asymptomatic carriage is precisely what decolonization targets. Postponement is unnecessary once decolonization is complete, and systemic antibiotics are not used to decolonize; they drive resistance without reliably eradicating carriage."} },
 
 {id:"RRP-084", t:"single", cn:"RRP", sys:"CV", topic:"Interpreting a high ankle-brachial index", d:3, b:0.55, cj:"evaluate", tags:["ankle-brachial index","peripheral arterial disease","calcification"],
  stem:"A client with diabetes reports calf pain on walking and has an ankle-brachial index of 1.35. How should the nurse interpret this result?",
@@ -197,15 +195,15 @@
 
 /* ---------------- Health Promotion and Maintenance (2) ---------------- */
 
-{id:"HPM-063", t:"single", cn:"HPM", sys:"REPI", topic:"Pertussis vaccination in each pregnancy", d:2, b:0.45, cj:"analyze", tags:["pertussis","vaccination in pregnancy","passive immunity"],
- stem:"A client at 29 weeks gestation reports receiving a tetanus booster two years ago during her last pregnancy. What should the nurse recommend?",
- opts:["Receive the pertussis-containing vaccine again during this pregnancy, since protection does not carry over between pregnancies",
-  "Skip the vaccine, since a booster within the past ten years is sufficient",
-  "Wait until after delivery, since vaccination during pregnancy is contraindicated",
-  "Vaccinate the newborn immediately at birth instead"],
+{id:"HPM-063", t:"single", cn:"HPM", sys:"RESP", topic:"Respiratory syncytial virus vaccination in older adults", d:2, b:0.45, cj:"analyze", tags:["RSV","vaccination","older adults"],
+ stem:"A 68-year-old client with heart failure asks whether any vaccine protects against the winter virus that sent a neighbour to hospital with pneumonia. What should the nurse explain?",
+ opts:["Vaccination against respiratory syncytial virus is recommended for adults in this age group, and the risk is higher with chronic heart or lung disease",
+  "No vaccine exists for respiratory viruses other than influenza, so hand hygiene is the only protection",
+  "The annual influenza vaccine already covers this virus, so no additional vaccine is needed",
+  "Vaccination is reserved for infants, since adults with heart failure develop natural immunity after childhood infection"],
  ans:0,
- rat:{c:"The pertussis-containing vaccine is recommended during every pregnancy, ideally between 27 and 36 weeks, so that maternal antibody crosses the placenta and protects the infant until the infant's own series begins.",
-  s:"A prior dose does not provide adequate passive protection for this infant. Pregnancy is the indication rather than a contraindication, and newborns cannot receive pertussis vaccine at birth."} },
+ rat:{c:"Respiratory syncytial virus causes substantial lower respiratory illness in older adults, and the risk is higher with chronic cardiac or pulmonary disease. Vaccination is recommended for this age group, in addition to rather than instead of influenza vaccination.",
+  s:"Influenza vaccine does not protect against this virus. Childhood infection does not confer durable immunity and reinfection across life is common, so adults remain susceptible. Hand hygiene helps but is not the only available measure."} },
 
 {id:"HPM-064", t:"single", cn:"HPM", sys:"HEME", topic:"Infection prevention after splenectomy", d:3, b:0.55, cj:"generate", tags:["asplenia","encapsulated organisms","overwhelming infection"],
  stem:"A client recovering from splenectomy after trauma asks how to prevent serious infection. What teaching is the priority?",
@@ -219,14 +217,14 @@
 
 /* ---------------- Basic Care and Comfort (1) ---------------- */
 
-{id:"BCC-064", t:"single", cn:"BCC", sys:"NEURO", topic:"Aspiration precautions during meals", d:3, b:0.55, cj:"act", tags:["dysphagia","aspiration","positioning"],
- stem:"A client with dysphagia after stroke is cleared for thickened liquids and a pureed diet. What should the nurse do during meals?",
- opts:["Position the client upright at 90 degrees, offer small amounts with a chin-tuck swallow, and keep the client upright for at least 30 minutes afterward",
-  "Position the client flat to reduce effort, since sitting upright tires a client with dysphagia",
-  "Offer thin liquids between bites to help clear the pureed food from the mouth",
-  "Use a straw, since it controls the volume delivered to the throat"],
+{id:"BCC-064", t:"single", cn:"BCC", sys:"MSK", topic:"Logrolling after spinal fusion", d:3, b:0.55, cj:"act", tags:["spinal surgery","positioning","alignment"],
+ stem:"A client is one day after lumbar spinal fusion and needs to be turned for skin care and comfort. What technique should the nurse use?",
+ opts:["Turn the client as a single unit with the head, shoulders, and pelvis moving together, using enough staff to keep the spine in alignment",
+  "Turn the shoulders first and then the hips, which is easier when only one nurse is available and still protects the spine",
+  "Have the client twist toward the nurse to help with the turn and maintain muscle strength",
+  "Raise the head of the bed to 45 degrees before turning to reduce the effort required"],
  ans:0,
- rat:{c:"Upright positioning uses gravity to move food downward and reduces pooling of residue, the chin tuck narrows the airway entrance, and staying upright afterward prevents reflux of retained material. Small controlled boluses lower aspiration risk.",
-  s:"A flat position removes gravity's protection and increases aspiration. Thin liquids are the hardest to control and are excluded for that reason, and a straw delivers fluid rapidly to the back of the mouth, bypassing oral control."} }
+ rat:{c:"Logrolling moves the head, shoulders, and pelvis as one unit so that no rotation or twisting force reaches the surgical site. It requires enough people to move the client smoothly and holds the spine in alignment throughout.",
+  s:"Turning segments separately rotates the spine and stresses the fusion, regardless of how few staff are present. Client-assisted twisting produces the same rotation, and raising the head before the turn does not prevent twisting."} }
   );
 })();
