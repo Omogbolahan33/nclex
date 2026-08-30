@@ -51,6 +51,13 @@ services:
       # serves the regular bank and ignores demo rows in the database.
       - key: DEMO_BANK
         value: "0"
+      # Where the question bank comes from (DEPLOYMENT.md §4e).
+      #   unset/"overlay" — database rows are laid OVER the in-repo bank, so
+      #     every repo item the database does not mention still ships.
+      #   "db" — the database IS the bank; the in-repo baseline is dropped and
+      #     only the seeded rows are served. Seed BEFORE switching this on.
+      - key: BANK_SOURCE
+        value: db
       # Optional niceties
       - key: PG_POOL_MAX
         value: "5"
