@@ -24,6 +24,22 @@ let DUP_REPORT = { clusters:0, duplicates:0, duplicateContentItems:0, exact:0, s
            present in the database are ignored.
    Demo ids are recognizable by prefix: items DEMO-*, cases CASE-DEMO-*.  */
 const DEMO_BANK = /^(1|true|yes|on)$/i.test(process.env.DEMO_BANK || "");
+
+/* ── BANK_SOURCE switch (set it in the deploy environment, e.g. BANK_SOURCE=db)
+   overlay (default) → database rows are laid OVER the in-repo bank: a row
+           replaces the item sharing its id, a new id is appended, and every
+           repo item the database does not mention still ships. This is the
+           historical behaviour and the right one while the repo is the
+           source of truth.
+   db    → the database IS the bank. The in-repo baseline is dropped and only
+           the rows in `items` / `cases` are served, so pruning content in the
+           database actually removes it from the app instead of falling back
+           to the bundled copy. Seed with `npm run db:seed` (or a targeted
+           import) before switching this on.
+   Safety valve: a database that yields ZERO items is treated as a
+   misconfiguration, not as "serve nothing" — the repo baseline is kept and a
+   loud warning is logged, because an empty bank breaks every exam route.  */
+const BANK_DB_ONLY = /^(db|database|db-only|replace)$/i.test(process.env.BANK_SOURCE || "");
 if (!process.env.ADMIN_KEY && process.env.NODE_ENV === "production" && !SERVERLESS){
   console.error("[fatal] NODE_ENV=production but ADMIN_KEY is not set — refusing to start. Set ADMIN_KEY in the environment (Render dashboard / .env).");
   process.exit(1);
@@ -67,10 +83,13 @@ function hydrate(){ // links live engine refs to the persisted doc (re-runnable 
     D.seen = engState.seen;
     store.save();
   };
-  // Content bank from the database (STORE=pg), overlaid on the in-repo
-  // baseline: a row replaces the item sharing its id, or is appended when the
-  // id is new. Seed the tables with `npm run db:seed`. An empty or unreachable
-  // database simply leaves the repo bank in place, so the app still boots.
+  // Content bank from the database (STORE=pg). BANK_SOURCE decides how it
+  // meets the in-repo bank (see the switch near the top):
+  //   overlay (default) — a row replaces the item sharing its id, or is
+  //     appended when the id is new; unmentioned repo items still ship.
+  //   db — the rows ARE the bank; the repo baseline is dropped entirely.
+  // Seed the tables with `npm run db:seed`. An empty or unreachable database
+  // simply leaves the repo bank in place, so the app still boots either way.
   // Authoring patches apply after this, keeping the governed pipeline on top.
   //
   // DEMO_BANK (see the switch near the top): when on, the bank is REPLACED by
@@ -92,21 +111,35 @@ function hydrate(){ // links live engine refs to the persisted doc (re-runnable 
   } else {
     const dItems = dbItems.filter(demoItem).length, dCases = dbCases.filter(demoCase).length;
     if (dItems || dCases) console.log(`DEMO_BANK off — ignoring ${dItems} demo item(s) and ${dCases} demo case(s) present in the database`);
-    {
-      let replaced = 0, added = 0;
-      for (const it of dbItems.filter(x => !demoItem(x))){
-        const i = NC.BANK.findIndex(q => q.id === it.id);
-        if (i >= 0){ NC.BANK[i] = it; replaced++; } else { NC.BANK.push(it); added++; }
-      }
-      if (replaced || added) console.log(`bank from database: ${replaced} replaced, ${added} added (${NC.BANK.length} items live)`);
+    const realItems = dbItems.filter(x => !demoItem(x));
+    const realCases = dbCases.filter(x => !demoCase(x));
+    if (BANK_DB_ONLY && !realItems.length){
+      console.error(`[bank] BANK_SOURCE=db but the database holds 0 non-demo items — keeping the ${NC.BANK.length}-item repo baseline so the app still boots. Seed the items table, then restart.`);
     }
-    {
-      let replaced = 0, added = 0;
-      for (const c of dbCases.filter(x => !demoCase(x))){
-        const i = NC.CASES.findIndex(x => x.id === c.id);
-        if (i >= 0){ NC.CASES[i] = c; replaced++; } else { NC.CASES.push(c); added++; }
+    if (BANK_DB_ONLY && realItems.length){
+      const baseline = NC.BANK.length;
+      NC.BANK.length = 0; NC.BANK.push(...realItems);
+      NC.CASES.length = 0; NC.CASES.push(...realCases);
+      console.log(`BANK_SOURCE=db — database IS the bank: ${NC.BANK.length} items + ${NC.CASES.length} cases live ` +
+                  `(in-repo baseline of ${baseline} items dropped)`);
+      if (!realCases.length) console.warn("[bank] BANK_SOURCE=db and the cases table holds no non-demo rows — case-study mode will be empty.");
+    } else {
+      {
+        let replaced = 0, added = 0;
+        for (const it of realItems){
+          const i = NC.BANK.findIndex(q => q.id === it.id);
+          if (i >= 0){ NC.BANK[i] = it; replaced++; } else { NC.BANK.push(it); added++; }
+        }
+        if (replaced || added) console.log(`bank from database: ${replaced} replaced, ${added} added (${NC.BANK.length} items live)`);
       }
-      if (replaced || added) console.log(`cases from database: ${replaced} replaced, ${added} added (${NC.CASES.length} cases live)`);
+      {
+        let replaced = 0, added = 0;
+        for (const c of realCases){
+          const i = NC.CASES.findIndex(x => x.id === c.id);
+          if (i >= 0){ NC.CASES[i] = c; replaced++; } else { NC.CASES.push(c); added++; }
+        }
+        if (replaced || added) console.log(`cases from database: ${replaced} replaced, ${added} added (${NC.CASES.length} cases live)`);
+      }
     }
   }
   if (D.bankPatches && Object.keys(D.bankPatches).length){
@@ -328,6 +361,7 @@ const requestHandler = async (req,res)=>{
         // Question-source switch: true when the demo/practice set is being served
         // (DEMO_BANK=1|true|yes|on in the environment).
         demoBank: DEMO_BANK,
+        bankSource: BANK_DB_ONLY ? "db" : "overlay",
         authoring: Object.values(D.authoring||{}).reduce((a,r)=>{ a[r.status]=(a[r.status]||0)+1; return a; },{}),
         // Persistence status. Stays 200 either way so the platform health check
         // does not restart-loop, but "persisted:false" on a pg store means
