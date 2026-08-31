@@ -130,6 +130,9 @@ Framework preset **Other**; no dashboard config needed beyond env vars.
      store degrades to the instance's `/tmp` on Vercel (read-only deploy dir):
      every cold start starts empty and writes are lost on redeploy.
    - `DEMO_BANK` — same meaning as on Render.
+   - `BANK_SOURCE` — same meaning as on Render, but already declared as
+     `env` in `vercel.json`, so it ships with the deployment and needs no
+     dashboard entry. A value set in the dashboard overrides the file.
 3. `vercel --prod` (CLI) or push to the connected branch.
 4. Verify: `/api/health` → `"ok":true` with the expected `items` count.
 
@@ -140,6 +143,15 @@ Framework preset **Other**; no dashboard config needed beyond env vars.
   transparent, without it the instances do not share state.
 - Postgres connections scale with concurrent instances — keep the Supabase
   **session pooler** URL as on Render (see §2).
+- **`BANK_SOURCE=db` is riskier on serverless than on Render.** `hydrate()`
+  runs per lambda instance, so every cold start re-reads `items`/`cases`.
+  `store-pg` logs and never throws on a dead database (exam uptime outranks
+  durability), so an instance whose read fails keeps the in-repo baseline and
+  serves the FULL bank while healthy instances serve the curated one — two
+  users can get different question sets at the same moment. `/api/health`
+  reports `items` and `bankSource` per instance; an unexpected `items` count
+  means a failed read on that instance, not missing content. Poll it a few
+  times after a deploy rather than trusting a single 200.
 - `npm test`, `npm run build`, Render, and local dev are unaffected: the
   embedded bundle is generated only by the Vercel build command and is
   gitignored (`vercel-content.cjs`).

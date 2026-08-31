@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": "node scripts/vercel-content.mjs && node build-online.mjs",
+  "env": {
+    "BANK_SOURCE": "db"
+  },
   "outputDirectory": "public",
   "headers": [
     {
