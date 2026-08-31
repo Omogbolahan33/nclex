@@ -117,6 +117,42 @@ NC.api = {
       .then(r=>{ if(!r.ok) throw new Error("me "+r.status); return r.json(); });
   },
   track(state){ return this.post("/api/track", state); },
+
+  /* ── immediate profile sync ──────────────────────────────────────────────
+     Every answered question pushes the profile to the server straight away.
+     The old call sites used `NC.api.track(...).catch(()=>{})`, which discarded
+     the failure silently: a candidate could answer for an hour on a dropped
+     connection and believe every answer was on their remote profile when none
+     of it ever left the device. syncNow() records the outcome, coalesces bursts
+     into one request, retries with backoff, and exposes state for the UI.     */
+  sync: { state:"idle", lastTs:0, lastError:null, fails:0, inflight:null },
+  syncNow(){
+    if (!this.remote || !this.account) return Promise.resolve(false);
+    if (this.sync.inflight) return this.sync.inflight;   // coalesce rapid answers
+    this.sync.state = "syncing";
+    this.sync.inflight = this.post("/api/track", NC.trackPayload())
+      .then(()=>{ this.sync.state="saved"; this.sync.lastTs=Date.now();
+                  this.sync.lastError=null; this.sync.fails=0; return true; })
+      .catch(e=>{ this.sync.state="error"; this.sync.fails++;
+                  this.sync.lastError = (e && e.body && e.body.error) || (e && e.message) || "sync failed";
+                  this.scheduleRetry(); return false; })
+      .finally(()=>{ this.sync.inflight = null; });
+    return this.sync.inflight;
+  },
+  scheduleRetry(){
+    if (this._retryTimer) return;
+    const delay = Math.min(30000, 2000 * Math.pow(2, Math.max(0, Math.min(4, this.sync.fails-1))));
+    this._retryTimer = setTimeout(()=>{ this._retryTimer=null; this.syncNow(); }, delay);
+    if (this._retryTimer.unref) this._retryTimer.unref();
+  },
+  syncLabel(){
+    if (!this.remote) return "Offline — saved on this device";
+    if (!this.account) return "Not signed in";
+    if (this.sync.state === "syncing") return "Syncing…";
+    if (this.sync.state === "error") return "Sync failed — will retry";
+    if (this.sync.lastTs) return "Saved " + new Date(this.sync.lastTs).toLocaleTimeString();
+    return "Synced";
+  },
   state(){ return fetch("/api/state", { headers: this.token? {Authorization:"Bearer "+this.token} : {} })
       .then(r=>{ if(!r.ok) throw new Error("state "+r.status); return r.json(); }); },
 
