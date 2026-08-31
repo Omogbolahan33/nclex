@@ -4,7 +4,7 @@
    token and progress sync. Standalone file → full local mode.                     */
 window.NC = window.NC || {};
 NC.api = {
-  remote: false, ready: false, token: null, account: null,
+  remote: false, ready: false, token: null, account: null, sessionLost: null,
 
   initAuth(){
     try {
@@ -38,7 +38,24 @@ NC.api = {
       NC.TAX = d.tax; NC.EXAMS = d.exams; NC.DISCLAIMER = d.disclaimer;
       NC.BANK = d.bank; NC.CASES = d.cases;      // sanitized: no ans / no rat
       NC.REMOTE = this.remote = true;
-      if (d.account) this.account = d.account; else if (this.token){ this.token=null; this.account=null; } // stale token
+      if (d.account){ this.account = d.account; this.sessionLost = null; }
+      else if (this.token){
+        /* The server did not recognize our token. That has two very different
+           causes and the old code treated both as "stale": it nulled this.token
+           in memory (leaving the stale value in localStorage) and dropped the
+           candidate into a fresh sign-up with no explanation.
+             invalid-token    → the credential really is bad; clear it.
+             ephemeral-store  → the host discards its filesystem on every cold
+                                start, so the account row is gone. Nothing the
+                                client can do, but the user deserves the reason.
+             store-empty      → same symptom, store is simply blank. */
+        const s = d.session || {};
+        this.sessionLost = {
+          cause: s.durable === false ? "ephemeral-store" : s.storeEmpty ? "store-empty" : "invalid-token",
+          presented: !!s.presented
+        };
+        this.setAuth(null, null); // clears memory AND localStorage
+      }
     } catch(e){ NC.REMOTE = this.remote = false; }
     this.ready = true;
     return this.remote;

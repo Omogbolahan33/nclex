@@ -226,9 +226,15 @@ function verifyPw(pw, salt, hash){
   const a = Buffer.from(hash,"hex"), b = Buffer.from(hashPw(pw,salt),"hex");
   return a.length===b.length && crypto.timingSafeEqual(a,b);
 }
+/* Session lifetime. 0 (the default) means the session NEVER expires — this is a
+   personal exam-prep app, so logging a candidate out mid-revision is a worse
+   failure than a long-lived token. Set SESSION_TTL_DAYS>0 to opt back into
+   expiry; tokens then slide forward on each authenticated request.
+   expires === 0 in a stored token means "never". */
+const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? 0);
 function issueToken(email){
   const tok = crypto.randomBytes(24).toString("hex");
-  D.tokens[tok] = { email, expires: Date.now()+30*864e5 };
+  D.tokens[tok] = { email, expires: SESSION_TTL_DAYS > 0 ? Date.now() + SESSION_TTL_DAYS*864e5 : 0 };
   store.save();
   return tok;
 }
@@ -237,7 +243,19 @@ function authUser(req){
   if (!m) return null;
   const t = D.tokens[m[1]];
   if (!t) return null;
-  if (t.expires < Date.now()){ delete D.tokens[m[1]]; store.save(); return null; }
+  // NOTE: the guard must test truthiness first — a non-expiring token stores
+  // expires === 0, and `0 < Date.now()` is true, so a naive comparison would
+  // delete every permanent session on first use.
+  if (t.expires){
+    const now = Date.now();
+    if (t.expires < now){ delete D.tokens[m[1]]; store.save(); return null; }
+    // Legacy tokens were issued with a 30-day deadline. Promote them to
+    // non-expiring (or slide them forward) on use, so nobody already signed in
+    // is logged out by this change.
+    if (SESSION_TTL_DAYS > 0){
+      if (t.expires - now < (SESSION_TTL_DAYS - 1)*864e5){ t.expires = now + SESSION_TTL_DAYS*864e5; store.save(); }
+    } else { t.expires = 0; store.save(); }
+  }
   return D.users[t.email] || null;
 }
 
@@ -332,7 +350,12 @@ const requestHandler = async (req,res)=>{
         // Persistence status. Stays 200 either way so the platform health check
         // does not restart-loop, but "persisted:false" on a pg store means
         // writes are only in memory — check the logs for [store-pg] lines.
-        store: { backend: store.FILE, persisted: store.connected ? store.connected() : true },
+        store: { backend: store.FILE, persisted: store.connected ? store.connected() : true,
+          // durable:false means the backing store is destroyed on every cold
+          // start — accounts and sessions will not survive a tab close.
+          durable: !store.EPHEMERAL, users: Object.keys(D.users).length,
+          sessions: Object.keys(D.tokens).length,
+          sessionTtlDays: SESSION_TTL_DAYS },
         version: require("./package.json").version });
 
     if (u.startsWith("/api/auth/")){
@@ -378,9 +401,15 @@ const requestHandler = async (req,res)=>{
       const user = authUser(req);
 
       if (u === "/api/bootstrap"){
+        /* `session` lets the client tell "your token is invalid" apart from "the
+           server lost its account store" — otherwise both look identical and the
+           app silently drops the candidate into a fresh sign-up. */
+        const presented = !!(req.headers.authorization||"").match(/^Bearer (.+)$/);
         return json(res,200,{ tax:NC.TAX, exams:NC.EXAMS, disclaimer:NC.DISCLAIMER,
           bank:NC.BANK.map(sanitizeItem), cases:NC.CASES.map(sanitizeCase),
-          account: user? { email:user.email, name:user.profile.name } : null }, req);
+          account: user? { email:user.email, name:user.profile.name } : null,
+          session: { presented, recognized: !!user, durable: !store.EPHEMERAL,
+            storeEmpty: !Object.keys(D.users).length && !Object.keys(D.tokens).length } }, req);
       }
       if (u === "/api/answer" && req.method==="POST"){
         const b = await body(req); const item = NC.item(b.qid);
@@ -501,10 +530,11 @@ const requestHandler = async (req,res)=>{
 const server = http.createServer(requestHandler);
 const PORT = process.env.PORT || 3000;
 
-/* token sweep: drop expired sessions (boot + hourly) */
+/* token sweep: drop expired sessions (boot + hourly). Tokens with expires === 0
+   are non-expiring by design and are never swept. */
 function sweepTokens(){
   const now = Date.now();
-  const gone = Object.keys(D.tokens||{}).filter(k=>D.tokens[k] && D.tokens[k].expires < now);
+  const gone = Object.keys(D.tokens||{}).filter(k=>D.tokens[k] && D.tokens[k].expires && D.tokens[k].expires < now);
   if (gone.length){ gone.forEach(k=>delete D.tokens[k]); store.save(); }
 }
 setInterval(sweepTokens, 3600e3).unref();
@@ -527,7 +557,12 @@ process.on("SIGINT",  ()=>graceful("SIGINT"));
 
 function listenAll(){
   sweepTokens();
-  server.listen(PORT, "0.0.0.0", ()=>console.log(`RN Ready exam server v${require("./package.json").version} on :${PORT} — ${NC.BANK.length} items + ${NC.CASES.length} cases · persisted store: ${store.FILE}`));
+  server.listen(PORT, "0.0.0.0", ()=>{
+    console.log(`RN Ready exam server v${require("./package.json").version} on :${PORT} — ${NC.BANK.length} items + ${NC.CASES.length} cases · store: ${store.FILE}`);
+    console.log(`  storage durability: ${store.EPHEMERAL ? "EPHEMERAL — accounts/sessions are lost on every restart" : "durable"} · sessions: ${SESSION_TTL_DAYS > 0 ? SESSION_TTL_DAYS + "-day sliding" : "never expire"}`);
+    if (store.EPHEMERAL)
+      console.warn("  ⚠ Candidates will be forced to re-register after any restart. Set STORE=pg + DATABASE_URL and run `npm run db:migrate`.");
+  });
   /* optional HTTPS alongside HTTP: TLS_CERT + TLS_KEY (PEM), TLS_PORT (default 3443) */
   const TLS_CERT = process.env.TLS_CERT, TLS_KEY = process.env.TLS_KEY;
   if (TLS_CERT && TLS_KEY){

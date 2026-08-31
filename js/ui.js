@@ -1464,6 +1464,18 @@ function progress(){
 /* ================= SETTINGS ================= */
 function settings(){
   const S=NC.load();
+  /* Explain a lost session instead of silently showing a blank sign-up form.
+     "ephemeral-store" means the deployment has no durable storage, so the
+     account row was destroyed on a cold start — the user needs to know that
+     re-registering will keep happening until STORE=pg is enabled. */
+  const lost = NC.api.sessionLost;
+  const lostNote = lost ? `<div class="card" style="border-color:#b45309">
+      <h3>Why you were signed out</h3>
+      <p class="hint">${lost.cause === "ephemeral-store"
+        ? "This server stores accounts on a temporary filesystem that is wiped every time it restarts, so your account and progress were destroyed. Re-registering will keep happening until the deployment sets <b>STORE=pg</b> with a <b>DATABASE_URL</b>."
+        : lost.cause === "store-empty"
+        ? "This server has no saved accounts — its storage was reset. Your previous progress could not be recovered."
+        : "Your saved sign-in was no longer recognised, so you were signed out. Sign in again to restore your progress."}</p></div>` : "";
   const acct = NC.api.account
     ? `<div class="kv"><span>Signed in</span><b>${esc(NC.api.account.email)}</b></div>
        <div class="row" style="margin-top:10px;gap:8px">
@@ -1473,7 +1485,7 @@ function settings(){
        <div class="field"><label>Password (8+ characters)</label><input id="ac-pass" type="password" autocomplete="new-password"></div>
        <div class="row" style="gap:8px">
          <button class="btn soft sm" data-act="acct-signup">Create account</button>
-         <button class="btn ghost sm" data-act="acct-login">Sign in</button></div>`;
+         <button class="btn ghost sm" data-act="acct-login">Sign in</button></div>${lostNote}`;
   screen(`<div class="topbar"><button class="back" data-act="go" data-to="#/home" aria-label="Back">‹</button><h1>Settings</h1></div>
    <div class="card">
     <div class="field"><label>Name</label><input id="st-name" value="${esc(S.user.name||"")}"></div>
