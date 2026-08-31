@@ -310,7 +310,7 @@ async function writeDb(snap){
   } finally { client.release(); }
 }
 
-module.exports = { load, loadAsync, save, saveNow, FILE: "postgres:"+KEY,
+module.exports = { load, loadAsync, save, saveNow, FILE: "postgres:"+KEY, EPHEMERAL: false,
   connected: () => tablesRead,
   _reset(){
     data = null;

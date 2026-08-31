@@ -159,6 +159,40 @@ lg = await j("/api/auth/login", {email:EMAIL, password:"password123"});
 stt = await fetch(B+"/api/state", {headers:{Authorization:"Bearer "+lg.data.token}}).then(r=>r.json());
 ok(stt.responses.length===2, "state survives across sessions (persistence)");
 
+console.log("— session durability: never expires, and a lost store is diagnosable —");
+{
+  // A candidate must never be forced to re-register because a session lapsed.
+  const h = await j("/api/health");
+  ok(h.data.store && typeof h.data.store.durable === "boolean", "health reports store.durable");
+  ok(h.data.store.sessionTtlDays === 0, "sessions never expire by default (sessionTtlDays=0), got "+h.data.store.sessionTtlDays);
+
+  // bootstrap must say WHY a token was not recognised, so the client can tell
+  // "bad credential" apart from "the server lost its account store" instead of
+  // silently dropping the candidate into a fresh sign-up.
+  const anon = await j("/api/bootstrap");
+  ok(anon.data.session && anon.data.session.presented === false && anon.data.session.recognized === false,
+     "anonymous bootstrap: session.presented=false, recognized=false");
+  const withTok = await fetch(B+"/api/bootstrap", {headers:{Authorization:"Bearer "+lg.data.token}}).then(r=>r.json());
+  ok(withTok.session.presented === true && withTok.session.recognized === true,
+     "valid token: session.presented=true, recognized=true");
+  ok(withTok.account && withTok.account.email === EMAIL, "valid token resolves the account");
+  const bogus = await fetch(B+"/api/bootstrap", {headers:{Authorization:"Bearer "+"f".repeat(48)}}).then(r=>r.json());
+  ok(bogus.session.presented === true && bogus.session.recognized === false && bogus.account === null,
+     "unrecognised token: presented=true, recognized=false, account=null");
+
+  // expires === 0 means never. A naive `expires < Date.now()` check treats 0 as
+  // already-expired and deletes every permanent session on first use, so assert
+  // on the stored value, not just on the request succeeding.
+  await new Promise(r=>setTimeout(r,500)); // allow the debounced store write to land
+  let stored = null;
+  try { stored = JSON.parse(readFileSync(new URL("../data/store.json", import.meta.url), "utf8")); } catch(e){}
+  if (stored && stored.tokens) {
+    const t = stored.tokens[lg.data.token];
+    ok(!!t, "issued token is present in the store");
+    ok(t && t.expires === 0, "issued token is non-expiring (expires===0), got "+JSON.stringify(t && t.expires));
+  } else console.log("  (json store not readable — skipping stored-token assertions)");
+}
+
 console.log("— calibration pipeline (v3b) —");
 {
   // seed 12 all-correct practice answers for HPM-002 into the response log

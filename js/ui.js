@@ -86,9 +86,16 @@ NC.route = function(){
   NC.logEvent("view",{page:r});
   const S = NC.load();
   if (!S.user.onboarded && page!=="onboard") return go("#/onboard");
+  /* Sign-in gate: answering questions requires an account, so progress is never
+     trapped on this device and every answer reaches the remote profile at once.
+     Only applies in remote mode — a standalone/offline build has no server to
+     authenticate against and keeps working fully on-device. */
+  if (NC.api && NC.api.remote && !NC.api.account && page!=="signin" && page!=="onboard")
+    return go("#/signin");
   const res = (()=>{
     switch(page){
       case "onboard": return onboard();
+      case "signin": return signin();
       case "home": return home();
       case "practice": return practiceHub();
       case "quick": return quickPick();
@@ -403,9 +410,7 @@ NC.actions["next"] = async (d,elm)=>{
     } else {
       NC.recordAnswer(s.id, item.id, cur.ans, timeMs, s.timed);
     }
-    if (NC.api && NC.api.account && NC.api.track) {
-      NC.api.track(NC.trackPayload()).catch(()=>{});
-    }
+    if (NC.api && NC.api.syncNow) NC.api.syncNow();
   }catch(e){
     if (e.status == null && NC.api.queueAnswer({sid:s.id, qid:item.id, ans:cur.ans, timeMs, timed:s.timed})){
       // offline: keys live server-side, so score on reconnect; mark pending now
@@ -446,9 +451,7 @@ function finishSession(s, timedOut){
     NC.srsProcessSession(s.id);
   }
   NC.logEvent("session_done",{mode:s.mode, count:s.items.length, timedOut:!!timedOut});
-  if (NC.api && NC.api.remote && NC.api.account){
-    NC.api.track(NC.trackPayload()).catch(()=>{}); // fire-and-forget sync
-  }
+  if (NC.api && NC.api.syncNow) NC.api.syncNow();
   go("#/session/"+s.id+"/results");
 }
 
@@ -665,9 +668,7 @@ function renderItemInCase(c){
       } else {
         NC.recordAnswer("case:"+c.id+":"+Date.now(), c.id+"-"+it.step, caseCtx.ans, timeMs, false);
       }
-      if (NC.api && NC.api.account && NC.api.track) {
-        NC.api.track(NC.trackPayload()).catch(()=>{});
-      }
+      if (NC.api && NC.api.syncNow) NC.api.syncNow();
     }catch(e){
       if (e.status == null && NC.api.queueAnswer({sid:"case:"+c.id, qid:c.id+"-"+it.step, ans:caseCtx.ans, timeMs, timed:false})){
         NC.applyScore("case:"+c.id+":"+Date.now(), c.id+"-"+it.step, caseCtx.ans, {score:0, answered:false}, timeMs, false);
@@ -951,9 +952,7 @@ async function finishRemoteSim(sim, done){
     answeredCount:r.answeredCount, counts:r.counts||{}, administered:r.administered||[],
     finishedTs:r.finishedTs||Date.now() });
   NC.save();
-  if (NC.api && NC.api.account && NC.api.track) {
-    NC.api.track(NC.trackPayload()).catch(()=>{});
-  }
+  if (NC.api && NC.api.syncNow) NC.api.syncNow();
   NC.logEvent("sim_done",{exam:sim.examId, outcome:r.outcome, items:r.answeredCount});
   go("#/sim/"+sim.id+"/results");
 }
@@ -1060,9 +1059,7 @@ function renderSimCaseRemote(sim, c, startAt){
     }
     NC.save();
 
-    if (NC.api && NC.api.account && NC.api.track) {
-      NC.api.track(NC.trackPayload()).catch(()=>{});
-    }
+    if (NC.api && NC.api.syncNow) NC.api.syncNow();
 
     try {
       if (simCaseCtxR.i>=c.items.length){ simCaseCtxR=null; return serveSimRemote(sim); }
@@ -1178,9 +1175,7 @@ NC.actions["sim-next"] = async (d,elm)=>{
     NC.applyScore("sim:"+sim.id, item.id, simCtx.ans, {score:0, answered:simCtx.ans!=null}, timeMs, true);
     sim.currentQid=null;
     NC.save();
-    if (NC.api && NC.api.account && NC.api.track) {
-      NC.api.track(NC.trackPayload()).catch(()=>{});
-    }
+    if (NC.api && NC.api.syncNow) NC.api.syncNow();
     try {
       return serveSimRemote(sim);
     } catch(err) {
@@ -1191,9 +1186,7 @@ NC.actions["sim-next"] = async (d,elm)=>{
   }
   NC.simAnswer(sim, item, simCtx.ans, timeMs);
   sim.currentQid=null; NC.save();
-  if (NC.api && NC.api.account && NC.api.track) {
-    NC.api.track(NC.trackPayload()).catch(()=>{});
-  }
+  if (NC.api && NC.api.syncNow) NC.api.syncNow();
   serveSim();
 };
 /* case inside simulation */
@@ -1256,9 +1249,7 @@ function renderSimCase(c, startAt){
     if (simCaseCtx.ans==null && !confirm("You must answer to continue. (No answer = scored incorrect.)")) return;
     try {
       NC.simCaseItemAnswered(sim, c, it.step, simCaseCtx.ans, Date.now()-simCaseCtx.startTs);
-      if (NC.api && NC.api.account && NC.api.track) {
-        NC.api.track(NC.trackPayload()).catch(()=>{});
-      }
+      if (NC.api && NC.api.syncNow) NC.api.syncNow();
       simCaseCtx.ans=null; simCaseCtx.startTs=Date.now(); simCaseCtx.i++;
       if (simCaseCtx.i>=c.items.length){
         simCaseCtx=null; sim.currentCase = null; sim.caseIdx = 0; sim.currentQid=null;
@@ -1461,11 +1452,91 @@ function progress(){
    <p class="tag-disclaimer">${esc(NC.DISCLAIMER)}</p>`, "#/progress");
 }
 
+/* ── auth actions ──────────────────────────────────────────────────────────
+   Registered outside any one screen. They used to live inside settings(), which
+   meant a sign-in screen rendered buttons wired to actions that did not exist
+   until Settings had been opened. `onDone` decides where success lands: back to
+   Settings, or through the gate into the app.                                 */
+function registerAuthActions(onDone){
+  const after = ()=>{ if (typeof onDone === "function") onDone(); else go("#/home"); };
+  const readCreds = ()=>({ email:(document.getElementById("ac-email")? document.getElementById("ac-email").value:"").trim(),
+    pass: document.getElementById("ac-pass")? document.getElementById("ac-pass").value : "" });
+  NC.actions["acct-signup"] = async ()=>{
+    const c = readCreds();
+    if (!c.email || c.pass.length<8) return NC.ui.toast("Enter an email and a password of 8+ characters");
+    try{
+      const r = await NC.api.signup(c.email, c.pass, NC.load().user.name, NC.trackPayload());
+      NC.api.setAuth(r.token, r.account);
+      const st = await NC.api.state(); NC.mergeState(st);
+      await NC.api.syncNow();
+      NC.ui.toast("Account created — progress backed up"); after();
+    }catch(e){ NC.ui.toast((e.body&&e.body.error) || "Could not create account"); }
+  };
+  NC.actions["acct-login"] = async ()=>{
+    const c = readCreds();
+    if (!c.email || !c.pass) return NC.ui.toast("Enter your email and password");
+    try{
+      const r = await NC.api.login(c.email, c.pass);
+      NC.api.setAuth(r.token, r.account);
+      const st = await NC.api.state();
+      // Always merge, unconditionally. mergeState is a union (newer wins per
+      // sid+qid, exposure counts merged by max), so it never loses local work —
+      // and gating it on "remote has more responses" meant a device that had
+      // practised offline never received its `seen` history, then re-served
+      // every question it had already answered.
+      NC.mergeState(st);
+      await NC.api.syncNow();
+      NC.ui.toast("Signed in — progress synced"); after();
+    }catch(e){ NC.ui.toast((e.body&&e.body.error) || "Sign-in failed"); }
+  };
+}
+
+/* ── sign-in gate ──────────────────────────────────────────────────────────
+   Answering questions requires an account, so progress is never trapped on one
+   device and every answer lands on the remote profile immediately.             */
+function signin(){
+  registerAuthActions(()=>go("#/home"));
+  const lost = NC.api.sessionLost;
+  screen(`
+   <div class="topbar"><h1>Sign in to start</h1></div>
+   <div class="card">
+     <p style="font-size:14px;margin:0">Your practice, cases and simulation scores are saved to your profile as you answer, and follow you to any device. Sign in or create an account to begin.</p>
+   </div>
+   ${lost ? `<div class="card" style="border-color:#b45309"><h3>Why you were signed out</h3><p class="hint">${
+     lost.cause === "ephemeral-store"
+       ? "This server stores accounts on a temporary filesystem that is wiped every time it restarts, so your account was destroyed. Re-registering will keep happening until the deployment sets <b>STORE=pg</b> with a <b>DATABASE_URL</b>."
+       : lost.cause === "store-empty"
+       ? "This server has no saved accounts — its storage was reset, so your previous progress could not be recovered."
+       : "Your saved sign-in was no longer recognised, so you were signed out."}</p></div>` : ""}
+   <div class="card">
+     <div class="field"><label>Email</label><input id="ac-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+     <div class="field"><label>Password (8+ characters)</label><input id="ac-pass" type="password" autocomplete="current-password"></div>
+     <div class="row" style="gap:8px">
+       <button class="btn" data-act="acct-login">Sign in</button>
+       <button class="btn soft sm" data-act="acct-signup">Create account</button></div>
+     <p class="hint" style="margin-top:8px">Sessions do not expire — you will stay signed in on this device.</p>
+   </div>
+   <p class="tag-disclaimer">${esc(NC.DISCLAIMER)}</p>`, null, {noTab:true});
+}
+
 /* ================= SETTINGS ================= */
 function settings(){
   const S=NC.load();
+  /* Explain a lost session instead of silently showing a blank sign-up form.
+     "ephemeral-store" means the deployment has no durable storage, so the
+     account row was destroyed on a cold start — the user needs to know that
+     re-registering will keep happening until STORE=pg is enabled. */
+  const lost = NC.api.sessionLost;
+  const lostNote = lost ? `<div class="card" style="border-color:#b45309">
+      <h3>Why you were signed out</h3>
+      <p class="hint">${lost.cause === "ephemeral-store"
+        ? "This server stores accounts on a temporary filesystem that is wiped every time it restarts, so your account and progress were destroyed. Re-registering will keep happening until the deployment sets <b>STORE=pg</b> with a <b>DATABASE_URL</b>."
+        : lost.cause === "store-empty"
+        ? "This server has no saved accounts — its storage was reset. Your previous progress could not be recovered."
+        : "Your saved sign-in was no longer recognised, so you were signed out. Sign in again to restore your progress."}</p></div>` : "";
   const acct = NC.api.account
     ? `<div class="kv"><span>Signed in</span><b>${esc(NC.api.account.email)}</b></div>
+       <div class="kv"><span>Remote profile</span><b>${esc(NC.api.syncLabel())}</b></div>
        <div class="row" style="margin-top:10px;gap:8px">
          <button class="btn soft sm" data-act="acct-sync">Sync now</button>
          <button class="btn ghost sm" data-act="acct-logout">Sign out</button></div>`
@@ -1473,7 +1544,7 @@ function settings(){
        <div class="field"><label>Password (8+ characters)</label><input id="ac-pass" type="password" autocomplete="new-password"></div>
        <div class="row" style="gap:8px">
          <button class="btn soft sm" data-act="acct-signup">Create account</button>
-         <button class="btn ghost sm" data-act="acct-login">Sign in</button></div>`;
+         <button class="btn ghost sm" data-act="acct-login">Sign in</button></div>${lostNote}`;
   screen(`<div class="topbar"><button class="back" data-act="go" data-to="#/home" aria-label="Back">‹</button><h1>Settings</h1></div>
    <div class="card">
     <div class="field"><label>Name</label><input id="st-name" value="${esc(S.user.name||"")}"></div>
@@ -1502,43 +1573,17 @@ function settings(){
     <div class="kv"><span>Responses recorded</span><b>${S.responses.length}</b></div>
     <button class="btn danger sm" data-act="st-reset" style="margin-top:10px">Reset all progress</button></div>
    <p class="tag-disclaimer">${esc(NC.DISCLAIMER)}</p>`, "#/home");
-  const readCreds = ()=>({ email:(document.getElementById("ac-email")? document.getElementById("ac-email").value:"").trim(),
-    pass: document.getElementById("ac-pass")? document.getElementById("ac-pass").value : "" });
-  NC.actions["acct-signup"] = async ()=>{
-    const c = readCreds();
-    if (!c.email || c.pass.length<8) return NC.ui.toast("Enter an email and a password of 8+ characters");
-    try{
-      const r = await NC.api.signup(c.email, c.pass, S.user.name, NC.trackPayload());
-      NC.api.setAuth(r.token, r.account);
-      const st = await NC.api.state(); NC.mergeState(st);
-      NC.ui.toast("Account created — progress backed up"); settings();
-    }catch(e){ NC.ui.toast((e.body&&e.body.error) || "Could not create account"); }
-  };
-  NC.actions["acct-login"] = async ()=>{
-    const c = readCreds();
-    if (!c.email || !c.pass) return NC.ui.toast("Enter your email and password");
-    try{
-      const r = await NC.api.login(c.email, c.pass);
-      NC.api.setAuth(r.token, r.account);
-      const st = await NC.api.state();
-      // Always merge, unconditionally. mergeState is a union (newer wins per
-      // sid+qid, exposure counts merged by max), so it never loses local work —
-      // and gating it on "remote has more responses" meant a device that had
-      // practised offline never received its `seen` history, then re-served
-      // every question it had already answered.
-      NC.mergeState(st);
-      try{ await NC.api.track(NC.trackPayload()); }catch(_){}
-      NC.ui.toast("Signed in — progress synced"); settings();
-    }catch(e){ NC.ui.toast((e.body&&e.body.error) || "Sign-in failed"); }
-  };
+  registerAuthActions(()=>settings());
   NC.actions["rem-save"] = async ()=>{ const t=document.getElementById("st-rem-time").value||"19:00";
     await NC.notify.enable(t); NC.ui.toast(NC.notify.permission==="denied" ? "Reminder set (in-app while open)" : "Reminder set for "+t); settings(); };
   NC.actions["rem-off"] = ()=>{ NC.notify.disable(); NC.ui.toast("Reminder off"); settings(); };
   NC.actions["rem-test"] = ()=>{ const how=NC.notify.test(); NC.ui.toast(how==="notification"? "Test notification sent":"In-app test reminder shown"); };
-  NC.actions["acct-logout"] = async ()=>{ try{ await NC.api.logout(); }catch(e){} NC.api.setAuth(null,null); NC.ui.toast("Signed out"); settings(); };
+  NC.actions["acct-logout"] = async ()=>{ try{ await NC.api.logout(); }catch(e){} NC.api.setAuth(null,null); NC.api.sync.state="idle"; NC.api.sync.lastTs=0; NC.ui.toast("Signed out"); go("#/signin"); };
   NC.actions["acct-sync"] = async ()=>{
-    try{ await NC.api.track(NC.trackPayload()); const st = await NC.api.state(); NC.mergeState(st); NC.ui.toast("Synced"); }
-    catch(e){ NC.ui.toast("Sync failed — check connection"); }
+    const okSaved = await NC.api.syncNow();
+    if (okSaved){ try{ const st = await NC.api.state(); NC.mergeState(st); }catch(_){} }
+    NC.ui.toast(okSaved ? "Synced — profile up to date" : "Sync failed — will retry automatically");
+    settings();
   };
   NC.actions["st-save"]=()=>{ const Su=NC.load();
     Su.user.name=document.getElementById("st-name").value.trim();
@@ -1661,9 +1706,7 @@ NC.actions["sim-abandon"] = (d) => {
   if (tick) clearInterval(tick);
   NC.simFinish(sim, "abandon", "below");
   NC.save();
-  if (NC.api && NC.api.account && NC.api.track) {
-    NC.api.track(NC.trackPayload()).catch(()=>{});
-  }
+  if (NC.api && NC.api.syncNow) NC.api.syncNow();
   const prompt = document.getElementById("sim-resume-prompt");
   if (prompt) prompt.remove();
   NC.ui.toast("Exam abandoned and scored");

@@ -25,6 +25,10 @@ const answerCurrent=()=>{
   const mx=q('.mx input')[0]; if (mx){ mx.checked=true; mx.dispatchEvent(new window.Event("change",{bubbles:true})); }
 };
 const txt=()=>window.document.getElementById("app").textContent;
+/* The sign-in gate requires an account in remote mode, so the remote sections
+   below authenticate first — mirroring what a real candidate must now do. */
+const signInAs = (email="test@rn.ready")=>{ window.NC.api.token="test-token"; window.NC.api.account={email, name:"Test"}; };
+const signOut  = ()=>{ window.NC.api.token=null; window.NC.api.account=null; };
 window.confirm=()=>true;
 
 console.log("— boot & onboarding —");
@@ -219,7 +223,7 @@ console.log("— offline answer queue (PWA) —");
   // simulate remote mode with a dead network
   const realFetch = window.fetch;
   window.fetch = () => Promise.reject(new TypeError("Failed to fetch"));
-  window.NC.api.remote = true;
+  window.NC.api.remote = true; signInAs();
   window.sessionStorage; // noop
   window.localStorage.removeItem("rnready-outq");
   ok(window.NC.api.queueSize()===0, "queue starts empty");
@@ -251,7 +255,7 @@ console.log("— offline answer queue (PWA) —");
   // re-flush is a no-op
   const again = await window.NC.api.flushQueue();
   ok(again===0, "second flush is a no-op");
-  window.NC.api.remote = false;
+  signOut(); window.NC.api.remote = false;
   window.fetch = realFetch;
 }
 
@@ -262,7 +266,7 @@ ok(q("[data-k]").length===20, "calculator keys present");
 console.log("— remote simulation: short cases, real-time saving & no hang on progression —");
 {
   const realFetch = window.fetch;
-  window.NC.api.remote = true;
+  window.NC.api.remote = true; signInAs();
   const mockCase = {
     id: "CASE-SHORT-01",
     title: "Brief Case — 1 Item",
@@ -391,7 +395,7 @@ console.log("— remote simulation: short cases, real-time saving & no hang on p
   ok(dummyBtn.textContent === "RETRY →", "button text was restored after failure");
   dummyBtn.remove();
 
-  window.NC.api.remote = false;
+  signOut(); window.NC.api.remote = false;
   window.fetch = realFetch;
 }
 
@@ -521,7 +525,7 @@ console.log("— remote sim recovers from a 404 instead of looping forever —")
 
   let startCalls=0, nextIds=[];
   const bak = { remote:window.NC.api.remote, start:window.NC.api.simStart, next:window.NC.api.simNext };
-  window.NC.api.remote = true;
+  window.NC.api.remote = true; signInAs();
   window.NC.api.simStart = async () => { startCalls++; return { simId:"FRESH-SIM-200", examId }; };
   window.NC.api.simNext = async (id) => {
     nextIds.push(id);
@@ -541,10 +545,66 @@ console.log("— remote sim recovers from a 404 instead of looping forever —")
   // toasts append to document.body, not #app, so txt() would never see them
   ok(!/Connection problem/.test(window.document.body.textContent), "a 404 does not show the transient 'Connection problem' toast");
 
-  window.NC.api.remote = bak.remote; window.NC.api.simStart = bak.start; window.NC.api.simNext = bak.next;
+  signOut(); window.NC.api.remote = bak.remote; window.NC.api.simStart = bak.start; window.NC.api.simNext = bak.next;
   const i = window.NC.load().sims.findIndex(x=>x.id==="FRESH-SIM-200");
   if (i>=0) window.NC.load().sims.splice(i,1);
   window.NC.save();
+}
+
+console.log("— sign-in gate: no questions until authenticated —");
+{
+  window.NC.api.remote = true; signOut();
+  await nav("#/practice");
+  await after(40);
+  ok(window.location.hash === "#/signin", "unauthenticated → practice is gated to #/signin (got "+window.location.hash+")");
+  ok(/Sign in to start/.test(txt()), "the sign-in screen renders");
+  ok(!!window.document.getElementById("ac-email") && !!window.document.getElementById("ac-pass"), "the sign-in form is present");
+  // the gate must not strand the candidate: actions used to be registered only
+  // inside settings(), so a standalone sign-in screen rendered dead buttons
+  ok(typeof window.NC.actions["acct-login"] === "function", "acct-login is wired on the sign-in screen");
+  ok(typeof window.NC.actions["acct-signup"] === "function", "acct-signup is wired on the sign-in screen");
+  await nav("#/sim/run/SOME-SIM");
+  await after(40);
+  ok(window.location.hash === "#/signin", "a deep link into a simulation is gated too (got "+window.location.hash+")");
+  signInAs();
+  await nav("#/practice");
+  await after(40);
+  ok(window.location.hash === "#/practice", "once signed in the gate opens (got "+window.location.hash+")");
+  signOut(); window.NC.api.remote = false;
+}
+
+console.log("— immediate profile sync: pushes on every answer, failures surface —");
+{
+  window.NC.api.remote = true; signInAs();
+  const realFetch = window.fetch;
+  let posts = 0;
+  window.NC.api.sync.state = "idle"; window.NC.api.sync.lastTs = 0; window.NC.api.sync.fails = 0;
+
+  window.fetch = async (url)=>{ if (String(url) === "/api/track"){ posts++; return { ok:true, status:200, json:async()=>({ok:true}) }; } return realFetch(url); };
+  const saved = await window.NC.api.syncNow();
+  ok(saved === true, "syncNow resolves true when the server accepts the profile");
+  ok(window.NC.api.sync.state === "saved" && window.NC.api.sync.lastTs > 0, "the save is recorded with a timestamp");
+  ok(/Saved /.test(window.NC.api.syncLabel()), "syncLabel reports the save time");
+
+  // rapid answers must coalesce into one request, not one per answer
+  posts = 0;
+  const burst = await Promise.all([window.NC.api.syncNow(), window.NC.api.syncNow(), window.NC.api.syncNow()]);
+  ok(posts === 1, "a burst of 3 concurrent syncs posts once (got "+posts+")");
+  ok(burst.every(x=>x===true), "all coalesced callers get the same result");
+
+  // the old code swallowed this with .catch(()=>{}) — a candidate could believe
+  // an hour of answers was on their profile when nothing left the device
+  window.fetch = async ()=>{ throw new TypeError("Failed to fetch"); };
+  window.NC.api.sync.state = "idle";
+  const failedSave = await window.NC.api.syncNow();
+  ok(failedSave === false, "syncNow resolves false on a network failure");
+  ok(window.NC.api.sync.state === "error" && !!window.NC.api.sync.lastError, "the failure is recorded, not swallowed");
+  ok(/failed/i.test(window.NC.api.syncLabel()), "syncLabel reports the failure");
+
+  if (window.NC.api._retryTimer){ clearTimeout(window.NC.api._retryTimer); window.NC.api._retryTimer = null; }
+  window.NC.api.sync.state = "idle"; window.NC.api.sync.fails = 0;
+  window.fetch = realFetch;
+  signOut(); window.NC.api.remote = false;
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

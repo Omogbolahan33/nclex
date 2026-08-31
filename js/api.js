@@ -4,7 +4,7 @@
    token and progress sync. Standalone file → full local mode.                     */
 window.NC = window.NC || {};
 NC.api = {
-  remote: false, ready: false, token: null, account: null,
+  remote: false, ready: false, token: null, account: null, sessionLost: null,
 
   initAuth(){
     try {
@@ -38,7 +38,24 @@ NC.api = {
       NC.TAX = d.tax; NC.EXAMS = d.exams; NC.DISCLAIMER = d.disclaimer;
       NC.BANK = d.bank; NC.CASES = d.cases;      // sanitized: no ans / no rat
       NC.REMOTE = this.remote = true;
-      if (d.account) this.account = d.account; else if (this.token){ this.token=null; this.account=null; } // stale token
+      if (d.account){ this.account = d.account; this.sessionLost = null; }
+      else if (this.token){
+        /* The server did not recognize our token. That has two very different
+           causes and the old code treated both as "stale": it nulled this.token
+           in memory (leaving the stale value in localStorage) and dropped the
+           candidate into a fresh sign-up with no explanation.
+             invalid-token    → the credential really is bad; clear it.
+             ephemeral-store  → the host discards its filesystem on every cold
+                                start, so the account row is gone. Nothing the
+                                client can do, but the user deserves the reason.
+             store-empty      → same symptom, store is simply blank. */
+        const s = d.session || {};
+        this.sessionLost = {
+          cause: s.durable === false ? "ephemeral-store" : s.storeEmpty ? "store-empty" : "invalid-token",
+          presented: !!s.presented
+        };
+        this.setAuth(null, null); // clears memory AND localStorage
+      }
     } catch(e){ NC.REMOTE = this.remote = false; }
     this.ready = true;
     return this.remote;
@@ -100,6 +117,42 @@ NC.api = {
       .then(r=>{ if(!r.ok) throw new Error("me "+r.status); return r.json(); });
   },
   track(state){ return this.post("/api/track", state); },
+
+  /* ── immediate profile sync ──────────────────────────────────────────────
+     Every answered question pushes the profile to the server straight away.
+     The old call sites used `NC.api.track(...).catch(()=>{})`, which discarded
+     the failure silently: a candidate could answer for an hour on a dropped
+     connection and believe every answer was on their remote profile when none
+     of it ever left the device. syncNow() records the outcome, coalesces bursts
+     into one request, retries with backoff, and exposes state for the UI.     */
+  sync: { state:"idle", lastTs:0, lastError:null, fails:0, inflight:null },
+  syncNow(){
+    if (!this.remote || !this.account) return Promise.resolve(false);
+    if (this.sync.inflight) return this.sync.inflight;   // coalesce rapid answers
+    this.sync.state = "syncing";
+    this.sync.inflight = this.post("/api/track", NC.trackPayload())
+      .then(()=>{ this.sync.state="saved"; this.sync.lastTs=Date.now();
+                  this.sync.lastError=null; this.sync.fails=0; return true; })
+      .catch(e=>{ this.sync.state="error"; this.sync.fails++;
+                  this.sync.lastError = (e && e.body && e.body.error) || (e && e.message) || "sync failed";
+                  this.scheduleRetry(); return false; })
+      .finally(()=>{ this.sync.inflight = null; });
+    return this.sync.inflight;
+  },
+  scheduleRetry(){
+    if (this._retryTimer) return;
+    const delay = Math.min(30000, 2000 * Math.pow(2, Math.max(0, Math.min(4, this.sync.fails-1))));
+    this._retryTimer = setTimeout(()=>{ this._retryTimer=null; this.syncNow(); }, delay);
+    if (this._retryTimer.unref) this._retryTimer.unref();
+  },
+  syncLabel(){
+    if (!this.remote) return "Offline — saved on this device";
+    if (!this.account) return "Not signed in";
+    if (this.sync.state === "syncing") return "Syncing…";
+    if (this.sync.state === "error") return "Sync failed — will retry";
+    if (this.sync.lastTs) return "Saved " + new Date(this.sync.lastTs).toLocaleTimeString();
+    return "Synced";
+  },
   state(){ return fetch("/api/state", { headers: this.token? {Authorization:"Bearer "+this.token} : {} })
       .then(r=>{ if(!r.ok) throw new Error("state "+r.status); return r.json(); }); },
 
